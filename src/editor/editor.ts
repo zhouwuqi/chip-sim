@@ -1,9 +1,9 @@
 import type { World } from '../world';
 import type { Camera } from '../render/camera';
-import type { ComponentKind, Dir } from '../sim/types';
+import type { Component, ComponentKind, Dir } from '../sim/types';
 import type { Ghost } from '../render/renderer';
 import { placeTemplate, stampTemplate, extractTemplate, type TemplateDef } from '../templates';
-import { footprint } from '../sim/geometry';
+import { footprint, terminalsOf, LABEL } from '../sim/geometry';
 
 export type Tool = ComponentKind | 'DELETE' | 'HAND' | 'TEMPLATE' | 'SELECT';
 
@@ -23,6 +23,7 @@ export class Editor {
   onUndo: (() => void) | null = null;
   onRedo: (() => void) | null = null;
   onStatus: ((msg: string) => void) | null = null;
+  onPin: ((key: string, label: string) => void) | null = null;
   private hover: { x: number; y: number } | null = null;
   private painting = false;
   private panning = false;
@@ -30,6 +31,9 @@ export class Editor {
   private selecting = false;
   private selStart: { x: number; y: number } | null = null;
   private selRect: SelRect | null = null;
+  private moving = false;
+  private moveTemplate: TemplateDef | null = null;
+  private moveGrab = { dx: 0, dy: 0 };
   private lastScreen = { x: 0, y: 0 };
   private lastCell = { x: NaN, y: NaN };
   onToolChange: ((tool: Tool, facing: Dir) => void) | null = null;
@@ -52,8 +56,28 @@ export class Editor {
     return this.tool === 'HAND' && this.hover ? this.hover : null;
   }
 
+  /** Pin the net of the clicked terminal to the logic analyzer. */
+  private pinComp(c: Component): void {
+    const here = terminalsOf(c).filter((t) => t.x === c.x && t.y === c.y);
+    const term =
+      here.find((t) => t.role === 'wire' || t.role === 'bus') ??
+      here.find((t) => t.role === 'out') ??
+      here[0];
+    if (term) this.onPin?.(term.key, `${LABEL[c.kind]}${c.id}`);
+  }
+
   /** Cells to draw as a translucent placement preview under the cursor. */
   preview(): Ghost[] | null {
+    if (this.moving && this.moveTemplate && this.hover) {
+      const ax = this.hover.x - this.moveGrab.dx;
+      const ay = this.hover.y - this.moveGrab.dy;
+      return placeTemplate(this.moveTemplate, ax, ay, 0).map((p) => ({
+        kind: p.kind,
+        x: p.x,
+        y: p.y,
+        facing: p.facing,
+      }));
+    }
     if (!this.hover || this.tool === 'HAND' || this.tool === 'SELECT') return null;
     if (this.tool === 'TEMPLATE') {
       if (!this.template) return null;
@@ -189,10 +213,33 @@ export class Editor {
       if (e.button !== 0) return;
 
       if (this.tool === 'HAND') {
-        if (!this.world.interact(cell.x, cell.y)) this.panning = true;
+        const comp = this.world.get(cell.x, cell.y);
+        if (e.shiftKey) {
+          if (comp) this.pinComp(comp);
+          else this.panning = true;
+          return;
+        }
+        if (this.world.interact(cell.x, cell.y)) return; // button toggle / clock cycle
+        if (comp) this.pinComp(comp);
+        else this.panning = true;
         return;
       }
       if (this.tool === 'SELECT') {
+        const r = this.selRect;
+        const inside =
+          r && cell.x >= r.minX && cell.x <= r.maxX && cell.y >= r.minY && cell.y <= r.maxY;
+        if (inside) {
+          // pick up the selection and drag it
+          const def = this.grabSelection();
+          if (def) {
+            this.moveTemplate = def;
+            this.moveGrab = { dx: cell.x - r!.minX, dy: cell.y - r!.minY };
+            this.deleteSelection();
+            this.selRect = null;
+            this.moving = true;
+            return;
+          }
+        }
         this.selecting = true;
         this.selStart = cell;
         this.selRect = { minX: cell.x, minY: cell.y, maxX: cell.x, maxY: cell.y };
@@ -233,6 +280,25 @@ export class Editor {
     });
 
     const end = () => {
+      if (this.moving && this.moveTemplate && this.hover) {
+        const ax = this.hover.x - this.moveGrab.dx;
+        const ay = this.hover.y - this.moveGrab.dy;
+        const cells = placeTemplate(this.moveTemplate, ax, ay, 0);
+        stampTemplate(this.world, this.moveTemplate, ax, ay, 0);
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (const p of cells) {
+          minX = Math.min(minX, p.x);
+          minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x);
+          maxY = Math.max(maxY, p.y);
+        }
+        this.selRect = { minX, minY, maxX, maxY };
+        this.moving = false;
+        this.moveTemplate = null;
+      }
       this.painting = false;
       this.panning = false;
       this.selecting = false;

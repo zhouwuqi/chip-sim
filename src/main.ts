@@ -6,7 +6,10 @@ import { Kernel } from './sim/kernel';
 import { compile } from './sim/compile';
 import { buildToolbar, type ToolbarApi } from './ui/toolbar';
 import { History } from './history';
+import { Analyzer } from './analyzer';
 import { TEMPLATES, extractTemplate, type TemplateDef } from './templates';
+import { computeTruthTable, type TruthTable } from './truthtable';
+import { footprint } from './sim/geometry';
 import type { Component } from './sim/types';
 
 const SAVE_KEY = 'chipsim:autosave';
@@ -97,6 +100,13 @@ function redo(): void {
 editor.onUndo = undo;
 editor.onRedo = redo;
 editor.onStatus = (m) => flash(m);
+
+const analyzer = new Analyzer();
+editor.onPin = (key, label) => {
+  const pinned = analyzer.toggle(key, label);
+  hintEl.style.display = analyzer.pins.length > 0 ? 'none' : '';
+  flash(pinned ? `已钉选 ${label} 到波形` : `已取消钉选 ${label}`);
+};
 
 // hidden file input for JSON import
 const fileInput = document.createElement('input');
@@ -211,12 +221,76 @@ toolbar = buildToolbar(toolbarEl, editor, {
     toolbar.refreshTemplates();
     flash(`已删除模板「${removed.name}」`);
   },
+  onTruthTable: () => {
+    const r = editor.selection();
+    if (!r) {
+      flash('请先用「框选」(B) 框住含按钮/灯的电路');
+      return;
+    }
+    const comps = [...world.all()].filter((c) =>
+      footprint(c.kind, c.x, c.y, c.facing).every(
+        (p) => p.x >= r.minX && p.x <= r.maxX && p.y >= r.minY && p.y <= r.maxY,
+      ),
+    );
+    const res = computeTruthTable(comps);
+    if ('error' in res) flash(res.error);
+    else showTruthTable(res);
+  },
 });
+
+function showTruthTable(tt: TruthTable): void {
+  document.getElementById('tt-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'tt-overlay';
+  const panel = document.createElement('div');
+  panel.className = 'tt-panel';
+
+  const head = document.createElement('div');
+  head.className = 'tt-head';
+  head.innerHTML = `<span>真值表 · ${tt.inputs.length} 入 ${tt.outputs.length} 出 · ${tt.rows.length} 行</span>`;
+  const remove = () => {
+    overlay.remove();
+    window.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') remove();
+  };
+  window.addEventListener('keydown', onKey);
+  const close = document.createElement('button');
+  close.className = 'tool';
+  close.textContent = '关闭 ✕';
+  close.onclick = remove;
+  head.appendChild(close);
+  panel.appendChild(head);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'tt-scroll';
+  const cells = (vals: string[], cls: string) => vals.map((v) => `<td class="${cls}">${v}</td>`).join('');
+  const headRow =
+    cells(tt.inputs, 'tt-in tt-h') + `<td class="tt-sep"></td>` + cells(tt.outputs, 'tt-out tt-h');
+  const bodyRows = tt.rows
+    .map(
+      (r) =>
+        `<tr>${cells(r.in.map(String), 'tt-in')}<td class="tt-sep"></td>${cells(
+          r.out.map(String),
+          'tt-out',
+        )}</tr>`,
+    )
+    .join('');
+  wrap.innerHTML = `<table class="tt"><thead><tr>${headRow}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+  panel.appendChild(wrap);
+
+  overlay.appendChild(panel);
+  overlay.onclick = (e) => {
+    if (e.target === overlay) remove();
+  };
+  document.body.appendChild(overlay);
+}
 
 const HINT =
   '工具(左手)：<b>Q</b>线 <b>W</b>AND <b>E</b>OR <b>A</b>XOR <b>S</b>NOT <b>Z</b>按钮 <b>X</b>灯 ' +
   '<b>C</b>时钟 <b>G</b>触发器 <b>V</b>桥 <b>T</b>总线 <b>D</b>删除 <b>B</b>框选 <b>F</b>操作 · <b>R</b>旋转 · ' +
-  '<b>Ctrl+Z/Y</b>撤销/重做 · 框选后 <b>R</b>整体旋转、<b>Ctrl+C/X/V</b>复制/剪切/粘贴 · <b>F</b>操作模式悬停看值/点亮整网 · 「🔗分享」';
+  '<b>Ctrl+Z/Y</b>撤销/重做 · 框选后 <b>R</b>整体旋转、<b>Ctrl+C/X/V</b>复制/剪切/粘贴 · <b>F</b>操作模式：悬停看值/点亮整网，点击线钉选到时序波形 · 「🔗分享」';
 hintEl.innerHTML = HINT;
 
 // --- main loop ---
@@ -227,8 +301,17 @@ function frame(): void {
     persist();
     history.record(world.serialize());
   }
-  for (let i = 0; i < ticksPerFrame; i++) kernel.tick();
-  renderer.draw(world, kernel, editor.preview(), editor.selection(), editor.probe());
+  const compiled = kernel.compiled;
+  for (let i = 0; i < ticksPerFrame; i++) {
+    kernel.tick();
+    if (analyzer.pins.length > 0) {
+      analyzer.sample((k) => {
+        const net = compiled.netOf[k];
+        return net === undefined ? 0 : kernel.value(net);
+      });
+    }
+  }
+  renderer.draw(world, kernel, editor.preview(), editor.selection(), editor.probe(), analyzer);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

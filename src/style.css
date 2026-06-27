@@ -155,3 +155,70 @@ button.swatch.active {
 #hint b {
   color: var(--text);
 }
+
+#tt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.tt-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  max-width: 90vw;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.tt-scroll {
+  overflow: auto;
+  padding: 8px 12px 12px;
+}
+
+table.tt {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+table.tt td {
+  padding: 3px 12px;
+  text-align: center;
+  border-bottom: 1px solid #1f2630;
+}
+
+table.tt .tt-h {
+  font-weight: bold;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+table.tt .tt-in {
+  color: #8fb6ff;
+}
+
+table.tt .tt-out {
+  color: var(--on);
+}
+
+table.tt .tt-sep {
+  width: 1px;
+  padding: 0;
+  background: var(--border);
+}

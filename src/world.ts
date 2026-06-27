@@ -136,7 +136,8 @@ export class World {
     this.occ.clear();
     this.nextId = 1;
     for (const c of data.components) {
-      this.place(c.k, c.x, c.y, c.f, c.col ?? 0);
+      const facing = ((c.f ?? 0) & 3) as Dir;
+      this.place(c.k, c.x, c.y, facing, c.col ?? 0);
       const placed = this.get(c.x, c.y);
       if (placed) {
         if (c.k === 'BUTTON') placed.on = !!c.on;

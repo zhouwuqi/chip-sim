@@ -4,6 +4,7 @@ import type { Component, ComponentKind, Dir } from '../sim/types';
 import { DIRS, opposite, terminalsOf, footprint, GATE_SYMBOL } from '../sim/geometry';
 import { Camera } from './camera';
 import { wireColor } from './palette';
+import type { Analyzer } from '../analyzer';
 
 const COL = {
   bg: '#0d1117',
@@ -65,6 +66,7 @@ export class Renderer {
     ghosts: Ghost[] | null,
     selRect: { minX: number; minY: number; maxX: number; maxY: number } | null = null,
     probe: { x: number; y: number } | null = null,
+    analyzer: Analyzer | null = null,
   ): void {
     const ctx = this.ctx;
     const cam = this.cam;
@@ -89,6 +91,79 @@ export class Renderer {
     if (probe) this.drawProbe(world, kernel, probe);
     if (ghosts) for (const g of ghosts) this.drawGhost(g);
     if (selRect) this.drawSelection(selRect);
+    if (analyzer && analyzer.pins.length > 0) this.drawAnalyzer(analyzer);
+  }
+
+  private drawAnalyzer(a: Analyzer): void {
+    const ctx = this.ctx;
+    const W = this.cam.viewW;
+    const H = this.cam.viewH;
+    const rowH = 26;
+    const labelW = 116;
+    const headH = 22;
+    const panelH = headH + a.pins.length * rowH + 8;
+    const top = H - panelH;
+
+    ctx.fillStyle = 'rgba(13,17,23,0.94)';
+    ctx.fillRect(0, top, W, panelH);
+    ctx.strokeStyle = COL.gateBorder;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, top + 0.5);
+    ctx.lineTo(W, top + 0.5);
+    ctx.stroke();
+
+    ctx.fillStyle = COL.text;
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('时序波形 · 操作(F)模式点击线钉选/取消', 8, top + 11);
+
+    const waveX = labelW;
+    const waveW = W - labelW - 12;
+    a.pins.forEach((p, i) => {
+      const ry = top + headH + i * rowH;
+      const base = ry + rowH - 4;
+      const amp = rowH - 11;
+      const buf = a.buffer(p.key);
+      let max = 1;
+      for (const v of buf) if (v > max) max = v;
+      const bus = max > 1;
+
+      ctx.fillStyle = bus ? COL.bus : COL.on;
+      ctx.fillText(p.label, 8, ry + rowH / 2);
+
+      ctx.strokeStyle = '#1f2a36';
+      ctx.beginPath();
+      ctx.moveTo(waveX, base + 1.5);
+      ctx.lineTo(waveX + waveW, base + 1.5);
+      ctx.stroke();
+
+      const n = buf.length;
+      if (n === 0) return;
+      ctx.strokeStyle = bus ? COL.bus : COL.on;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      let prevY = base - (buf[0] / max) * amp;
+      for (let k = 0; k < n; k++) {
+        const x = waveX + (n === 1 ? waveW : (k / (n - 1)) * waveW);
+        const y = base - (buf[k] / max) * amp;
+        if (k === 0) ctx.moveTo(x, y);
+        else {
+          ctx.lineTo(x, prevY);
+          ctx.lineTo(x, y);
+        }
+        prevY = y;
+      }
+      ctx.stroke();
+
+      if (bus) {
+        ctx.fillStyle = COL.bus;
+        ctx.textAlign = 'right';
+        ctx.fillText(`0x${buf[n - 1].toString(16).toUpperCase()}`, W - 8, ry + 9);
+        ctx.textAlign = 'left';
+      }
+    });
   }
 
   /** Hover-probe: highlight the whole net under the cursor and read its value. */

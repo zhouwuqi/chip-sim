@@ -16,6 +16,7 @@ interface ToolbarHooks {
   templates: () => TemplateDef[];
   onSaveTemplate: () => void;
   onDeleteTemplate: (index: number) => void;
+  onTruthTable: () => void;
 }
 
 export interface ToolbarApi {
@@ -111,6 +112,7 @@ export function buildToolbar(el: HTMLElement, editor: Editor, hooks: ToolbarHook
   tmplGroup.appendChild(tmplSel);
   tmplGroup.appendChild(btn('框选存模板', hooks.onSaveTemplate, '先用「框选」框住电路，再点此存为模板'));
   tmplGroup.appendChild(btn('删模板', () => hooks.onDeleteTemplate(Number(tmplSel.value))));
+  tmplGroup.appendChild(btn('真值表', hooks.onTruthTable, '框选含按钮/灯的组合电路，自动算真值表'));
 
   const speedGroup = group(el);
   speedGroup.appendChild(text('速度'));
