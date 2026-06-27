@@ -108,7 +108,7 @@ export class Kernel {
     return this.cur[net];
   }
 
-  state(): Uint8Array {
+  state(): Int32Array {
     return this.cur;
   }
 }
