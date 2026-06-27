@@ -396,6 +396,19 @@ select.navsel:hover {
   background: var(--line-hover);
 }
 
+.menu.row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 132px;
+  padding: 10px;
+}
+
+.menu.row .swatch {
+  width: 28px;
+  height: 28px;
+}
+
 /* ---------- transient toast (was the persistent hint) ---------- */
 #hint {
   position: fixed;

@@ -222,6 +222,29 @@ const doDeleteTemplate = (i: number) => {
   flash(`已删除模板「${removed.name}」`);
 };
 
+// --- theme accent colour (switchable from the top-right 🎨) ---
+const ACCENTS = [
+  { name: '青', hex: '#2dd4bf', strong: '#14b8a6' },
+  { name: '蓝', hex: '#3b82f6', strong: '#2563eb' },
+  { name: '紫', hex: '#a78bfa', strong: '#8b5cf6' },
+  { name: '绿', hex: '#22c55e', strong: '#16a34a' },
+  { name: '橙', hex: '#fb923c', strong: '#f97316' },
+  { name: '粉', hex: '#f472b6', strong: '#ec4899' },
+];
+const ACCENT_KEY = 'chipsim:accent';
+function applyAccent(a: { hex: string; strong: string }): void {
+  document.documentElement.style.setProperty('--accent', a.hex);
+  document.documentElement.style.setProperty('--accent-strong', a.strong);
+  renderer.setAccent(a.hex);
+  try {
+    localStorage.setItem(ACCENT_KEY, a.hex);
+  } catch {
+    /* ignore */
+  }
+}
+const initAccent = ACCENTS.find((a) => a.hex === localStorage.getItem(ACCENT_KEY)) ?? ACCENTS[0];
+applyAccent(initAccent);
+
 // --- top nav + bottom tool pill ---
 const nav = buildTopNav(topnavEl, editor, {
   onUndo: undo,
@@ -235,6 +258,9 @@ const nav = buildTopNav(topnavEl, editor, {
   onClear: doClear,
   templates: () => [...TEMPLATES, ...customTemplates],
   onDeleteTemplate: doDeleteTemplate,
+  accents: ACCENTS,
+  currentAccent: initAccent.hex,
+  onAccent: applyAccent,
 });
 const bottom = buildBottomBar(bottombarEl, editor);
 editor.onToolChange = (t) => {

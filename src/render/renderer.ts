@@ -8,8 +8,8 @@ import type { Analyzer } from '../analyzer';
 
 const COL = {
   bg: '#0d1117',
-  grid: '#1b222c',
-  gridStrong: '#222c38',
+  grid: '#2a313c',
+  gridStrong: '#3c4654',
   on: '#39d353',
   off: '#30404d',
   wireOff: '#2a3947',
@@ -22,7 +22,13 @@ const COL = {
   busOff: '#274655',
   ghost: 'rgba(45,212,191,0.4)',
   ghostStroke: '#2dd4bf',
+  selFill: 'rgba(45,212,191,0.1)',
 };
+
+function hexToRgba(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
 
 export interface Ghost {
   kind: ComponentKind | 'DELETE';
@@ -53,6 +59,13 @@ export class Renderer {
     this.canvas.style.height = h + 'px';
     this.cam.viewW = w;
     this.cam.viewH = h;
+  }
+
+  /** Recolour the selection/marquee/ghost accents to match the UI theme. */
+  setAccent(hex: string): void {
+    COL.ghostStroke = hex;
+    COL.ghost = hexToRgba(hex, 0.4);
+    COL.selFill = hexToRgba(hex, 0.1);
   }
 
   private valOf(key: string, k: Kernel): number {
@@ -235,9 +248,9 @@ export class Renderer {
     const tl = this.cellRect(r.minX, r.minY);
     const w = (r.maxX - r.minX + 1) * tl.s;
     const h = (r.maxY - r.minY + 1) * tl.s;
-    ctx.fillStyle = 'rgba(45,212,191,0.1)';
+    ctx.fillStyle = COL.selFill;
     ctx.fillRect(tl.sx, tl.sy, w, h);
-    ctx.strokeStyle = '#2dd4bf';
+    ctx.strokeStyle = COL.ghostStroke;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(tl.sx + 0.5, tl.sy + 0.5, w - 1, h - 1);
@@ -248,27 +261,23 @@ export class Renderer {
     const ctx = this.ctx;
     const cam = this.cam;
     const px = cam.px;
-    if (px < 6) return; // too zoomed out to bother
+    if (px < 7) return; // too zoomed out — dots would be noise
     const x0 = Math.floor(cam.screenToWorldX(0));
     const x1 = Math.ceil(cam.screenToWorldX(cam.viewW));
     const y0 = Math.floor(cam.screenToWorldY(0));
     const y1 = Math.ceil(cam.screenToWorldY(cam.viewH));
-    ctx.lineWidth = 1;
-    for (let x = x0; x <= x1; x++) {
-      const sx = Math.round(cam.worldToScreenX(x));
-      ctx.strokeStyle = x % 5 === 0 ? COL.gridStrong : COL.grid;
-      ctx.beginPath();
-      ctx.moveTo(sx + 0.5, 0);
-      ctx.lineTo(sx + 0.5, cam.viewH);
-      ctx.stroke();
-    }
+    // dot matrix at every grid intersection; every 5th dot a touch larger/brighter
     for (let y = y0; y <= y1; y++) {
-      const sy = Math.round(cam.worldToScreenY(y));
-      ctx.strokeStyle = y % 5 === 0 ? COL.gridStrong : COL.grid;
-      ctx.beginPath();
-      ctx.moveTo(0, sy + 0.5);
-      ctx.lineTo(cam.viewW, sy + 0.5);
-      ctx.stroke();
+      const sy = cam.worldToScreenY(y);
+      for (let x = x0; x <= x1; x++) {
+        const sx = cam.worldToScreenX(x);
+        const major = x % 5 === 0 && y % 5 === 0;
+        ctx.fillStyle = major ? COL.gridStrong : COL.grid;
+        const r = major ? 1.6 : 1.1;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
