@@ -5,11 +5,11 @@ import { Editor } from './editor/editor';
 import { Kernel } from './sim/kernel';
 import { compile } from './sim/compile';
 import { buildToolbar, type ToolbarApi } from './ui/toolbar';
+import { buildToolPalette } from './ui/toolpalette';
 import { History } from './history';
 import { Analyzer } from './analyzer';
-import { TEMPLATES, extractTemplate, type TemplateDef } from './templates';
+import { TEMPLATES, extractComps, type TemplateDef } from './templates';
 import { computeTruthTable, type TruthTable } from './truthtable';
-import { footprint } from './sim/geometry';
 import type { Component } from './sim/types';
 
 const SAVE_KEY = 'chipsim:autosave';
@@ -17,7 +17,9 @@ const TEMPLATES_KEY = 'chipsim:templates';
 
 const canvas = document.getElementById('screen') as HTMLCanvasElement;
 const toolbarEl = document.getElementById('toolbar') as HTMLElement;
+const toolsEl = document.getElementById('tools') as HTMLElement;
 const hintEl = document.getElementById('hint') as HTMLElement;
+const ctxEl = document.getElementById('ctxmenu') as HTMLElement;
 
 const world = new World();
 const renderer = new Renderer(canvas);
@@ -191,19 +193,14 @@ toolbar = buildToolbar(toolbarEl, editor, {
   },
   templates: () => [...TEMPLATES, ...customTemplates],
   onSaveTemplate: () => {
-    const sel = editor.selection();
-    if (!sel) {
-      flash('请先用「框选」(B) 框住要保存的电路');
-      return;
-    }
-    const def = extractTemplate([...world.all()], '', sel);
-    if (def.parts.length === 0) {
-      flash('选区内没有元件');
+    const comps = editor.selectedComponents();
+    if (comps.length === 0) {
+      flash('请先用箭头(V)选中要保存的电路');
       return;
     }
     const name = prompt('模板名称：', `自定义 ${customTemplates.length + 1}`);
     if (!name) return;
-    def.name = name;
+    const def = extractComps(comps, name).def;
     customTemplates.push(def);
     persistTemplates();
     toolbar.refreshTemplates();
@@ -222,21 +219,64 @@ toolbar = buildToolbar(toolbarEl, editor, {
     flash(`已删除模板「${removed.name}」`);
   },
   onTruthTable: () => {
-    const r = editor.selection();
-    if (!r) {
-      flash('请先用「框选」(B) 框住含按钮/灯的电路');
+    const comps = editor.selectedComponents();
+    if (comps.length === 0) {
+      flash('请先用箭头(V)选中含按钮/灯的电路');
       return;
     }
-    const comps = [...world.all()].filter((c) =>
-      footprint(c.kind, c.x, c.y, c.facing).every(
-        (p) => p.x >= r.minX && p.x <= r.maxX && p.y >= r.minY && p.y <= r.maxY,
-      ),
-    );
     const res = computeTruthTable(comps);
     if ('error' in res) flash(res.error);
     else showTruthTable(res);
   },
 });
+
+// left tool palette + keep both toolbars in sync with the active tool
+const palette = buildToolPalette(toolsEl, editor);
+editor.onToolChange = (t, f) => {
+  toolbar.refresh(t, f);
+  palette.refresh(t);
+};
+toolbar.refresh(editor.tool, editor.facing);
+palette.refresh(editor.tool);
+
+// right-click context menu
+function ctxItem(label: string, key: string, fn: () => void, enabled: boolean): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.innerHTML = `<span>${label}</span><span class="ctx-key">${key}</span>`;
+  b.disabled = !enabled;
+  b.onclick = () => {
+    ctxEl.classList.remove('open');
+    fn();
+  };
+  return b;
+}
+editor.onContextMenu = (sx, sy) => {
+  const sel = editor.hasSelection();
+  const clip = !!editor.clipboard;
+  ctxEl.replaceChildren(
+    ctxItem('复制', 'Ctrl+C', () => editor.copy(), sel),
+    ctxItem('剪切', 'Ctrl+X', () => editor.cut(), sel),
+    ctxItem('复制副本', 'Ctrl+D', () => editor.duplicate(), sel),
+    ctxItem('粘贴', 'Ctrl+V', () => editor.paste(), clip),
+    ctxItem('旋转', 'R', () => editor.rotateSelection(), sel),
+    ctxItem('删除', 'Del', () => editor.deleteSelected(), sel),
+  );
+  ctxEl.classList.add('open');
+  const r = ctxEl.getBoundingClientRect();
+  const x = Math.min(sx, window.innerWidth - r.width - 4);
+  const y = Math.min(sy, window.innerHeight - r.height - 4);
+  ctxEl.style.left = `${x}px`;
+  ctxEl.style.top = `${y}px`;
+};
+window.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (ctxEl.classList.contains('open') && !ctxEl.contains(e.target as Node)) {
+      ctxEl.classList.remove('open');
+    }
+  },
+  true,
+);
 
 function showTruthTable(tt: TruthTable): void {
   document.getElementById('tt-overlay')?.remove();
@@ -288,9 +328,9 @@ function showTruthTable(tt: TruthTable): void {
 }
 
 const HINT =
-  '工具(左手)：<b>Q</b>线 <b>W</b>AND <b>E</b>OR <b>A</b>XOR <b>S</b>NOT <b>Z</b>按钮 <b>X</b>灯 ' +
-  '<b>C</b>时钟 <b>G</b>触发器 <b>V</b>桥 <b>T</b>总线 <b>D</b>删除 <b>B</b>框选 <b>F</b>操作 · <b>R</b>旋转 · ' +
-  '<b>Ctrl+Z/Y</b>撤销/重做 · 框选后 <b>R</b>整体旋转、<b>Ctrl+C/X/V</b>复制/剪切/粘贴 · <b>F</b>操作模式：悬停看值/点亮整网，点击线钉选到时序波形 · 「🔗分享」';
+  '<b>V</b>选择(点选/框选/拖动)，选中后右键菜单或 <b>Ctrl+C/X/V/D</b>复制剪切粘贴副本、<b>R</b>旋转、<b>Del</b>删除 · ' +
+  '左栏图标选工具放置(<b>W</b>线 <b>A</b>与 <b>O</b>或 <b>X</b>异或 <b>N</b>非 <b>B</b>钮 <b>L</b>灯 <b>K</b>钟 <b>D</b>触 …) · ' +
+  '<b>H</b>操作：点钮/钟、悬停看值、点线钉波形 · 滚轮缩放 · 空格拖动';
 hintEl.innerHTML = HINT;
 
 // --- main loop ---
@@ -311,7 +351,15 @@ function frame(): void {
       });
     }
   }
-  renderer.draw(world, kernel, editor.preview(), editor.selection(), editor.probe(), analyzer);
+  renderer.draw(
+    world,
+    kernel,
+    editor.preview(),
+    editor.marquee(),
+    editor.probe(),
+    analyzer,
+    editor.selectedIds(),
+  );
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -2,7 +2,13 @@ import type { World } from '../world';
 import type { Camera } from '../render/camera';
 import type { Component, ComponentKind, Dir } from '../sim/types';
 import type { Ghost } from '../render/renderer';
-import { placeTemplate, stampTemplate, extractTemplate, type TemplateDef } from '../templates';
+import {
+  placeTemplate,
+  stampTemplate,
+  stampTemplateCells,
+  extractComps,
+  type TemplateDef,
+} from '../templates';
 import { footprint, terminalsOf, LABEL } from '../sim/geometry';
 
 export type Tool = ComponentKind | 'DELETE' | 'HAND' | 'TEMPLATE' | 'SELECT';
@@ -15,7 +21,7 @@ export interface SelRect {
 }
 
 export class Editor {
-  tool: Tool = 'WIRE';
+  tool: Tool = 'SELECT';
   facing: Dir = 0;
   wireColor = 0;
   template: TemplateDef | null = null;
@@ -24,19 +30,24 @@ export class Editor {
   onRedo: (() => void) | null = null;
   onStatus: ((msg: string) => void) | null = null;
   onPin: ((key: string, label: string) => void) | null = null;
+  onContextMenu: ((sx: number, sy: number) => void) | null = null;
+  onToolChange: ((tool: Tool, facing: Dir) => void) | null = null;
+
+  private selected = new Set<number>();
   private hover: { x: number; y: number } | null = null;
   private painting = false;
   private panning = false;
   private spaceDown = false;
-  private selecting = false;
-  private selStart: { x: number; y: number } | null = null;
-  private selRect: SelRect | null = null;
+  // marquee + move state for the SELECT (arrow) tool
+  private marqueeing = false;
+  private marqueeStart: { x: number; y: number } | null = null;
+  private marqueeBase = new Set<number>();
+  private marqueeRect: SelRect | null = null;
+  private moveArmed = false;
   private moving = false;
-  private moveTemplate: TemplateDef | null = null;
-  private moveGrab = { dx: 0, dy: 0 };
+  private moveStart = { x: 0, y: 0 };
   private lastScreen = { x: 0, y: 0 };
   private lastCell = { x: NaN, y: NaN };
-  onToolChange: ((tool: Tool, facing: Dir) => void) | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -46,9 +57,26 @@ export class Editor {
     this.bind();
   }
 
-  /** Current box-selection rectangle (for rendering / save-as-template). */
-  selection(): SelRect | null {
-    return this.tool === 'SELECT' ? this.selRect : null;
+  // --- queries used by the renderer / host ---
+
+  selectedIds(): Set<number> {
+    return this.selected;
+  }
+
+  /** Live components in the selection (also prunes ids that no longer exist). */
+  selectedComponents(): Component[] {
+    const out: Component[] = [];
+    for (const c of this.world.all()) if (this.selected.has(c.id)) out.push(c);
+    if (out.length !== this.selected.size) this.selected = new Set(out.map((c) => c.id));
+    return out;
+  }
+
+  marquee(): SelRect | null {
+    return this.marqueeing ? this.marqueeRect : null;
+  }
+
+  hasSelection(): boolean {
+    return this.selectedComponents().length > 0;
   }
 
   /** Cell to probe (highlight its net + show value): hover while in 操作 mode. */
@@ -56,26 +84,16 @@ export class Editor {
     return this.tool === 'HAND' && this.hover ? this.hover : null;
   }
 
-  /** Pin the net of the clicked terminal to the logic analyzer. */
-  private pinComp(c: Component): void {
-    const here = terminalsOf(c).filter((t) => t.x === c.x && t.y === c.y);
-    const term =
-      here.find((t) => t.role === 'wire' || t.role === 'bus') ??
-      here.find((t) => t.role === 'out') ??
-      here[0];
-    if (term) this.onPin?.(term.key, `${LABEL[c.kind]}${c.id}`);
-  }
-
-  /** Cells to draw as a translucent placement preview under the cursor. */
+  /** Translucent placement preview under the cursor. */
   preview(): Ghost[] | null {
-    if (this.moving && this.moveTemplate && this.hover) {
-      const ax = this.hover.x - this.moveGrab.dx;
-      const ay = this.hover.y - this.moveGrab.dy;
-      return placeTemplate(this.moveTemplate, ax, ay, 0).map((p) => ({
-        kind: p.kind,
-        x: p.x,
-        y: p.y,
-        facing: p.facing,
+    if (this.moving && this.hover) {
+      const dx = this.hover.x - this.moveStart.x;
+      const dy = this.hover.y - this.moveStart.y;
+      return this.selectedComponents().map((c) => ({
+        kind: c.kind,
+        x: c.x + dx,
+        y: c.y + dy,
+        facing: c.facing,
       }));
     }
     if (!this.hover || this.tool === 'HAND' || this.tool === 'SELECT') return null;
@@ -93,65 +111,54 @@ export class Editor {
 
   setTool(t: Tool): void {
     this.tool = t;
-    if (t !== 'SELECT') this.selRect = null;
     this.onToolChange?.(this.tool, this.facing);
   }
 
-  /** Pick a wire colour and switch to the wire tool. */
   setWireColor(i: number): void {
     this.wireColor = i;
     this.setTool('WIRE');
   }
 
-  /** Select a template to stamp. */
   setTemplate(def: TemplateDef): void {
     this.template = def;
     this.setTool('TEMPLATE');
   }
 
-  /** Extract the components fully inside the current selection as a template. */
-  private grabSelection(): TemplateDef | null {
-    if (!this.selRect) {
-      this.onStatus?.('请先用「框选」(B) 框住元件');
-      return null;
-    }
-    const def = extractTemplate([...this.world.all()], '剪贴板', this.selRect);
-    if (def.parts.length === 0) {
-      this.onStatus?.('选区内没有元件');
-      return null;
-    }
-    return def;
+  rotate(): void {
+    this.facing = ((this.facing + 1) % 4) as Dir;
+    this.onToolChange?.(this.tool, this.facing);
   }
 
-  /** Delete every component fully inside the current selection. */
-  private deleteSelection(): number {
-    if (!this.selRect) return 0;
-    const r = this.selRect;
-    const victims = [...this.world.all()].filter((c) =>
-      footprint(c.kind, c.x, c.y, c.facing).every(
-        (p) => p.x >= r.minX && p.x <= r.maxX && p.y >= r.minY && p.y <= r.maxY,
-      ),
-    );
-    for (const c of victims) this.world.remove(c.x, c.y);
-    return victims.length;
-  }
+  // --- selection operations (act on the selected object set) ---
 
-  /** Copy the selection and immediately enter the rubber-stamp paste mode. */
   copy(): void {
-    const def = this.grabSelection();
-    if (!def) return;
-    this.clipboard = def;
-    this.setTemplate(def); // R 旋转 · 点击连续盖章 · Esc 退出
-    this.onStatus?.(`已复制 ${def.parts.length} 个元件 · R 旋转 · 点击盖章 · Esc 退出`);
+    const comps = this.selectedComponents();
+    if (comps.length === 0) {
+      this.onStatus?.('请先用箭头(V)选中元件');
+      return;
+    }
+    this.clipboard = extractComps(comps).def;
+    this.onStatus?.(`已复制 ${comps.length} 个元件（Ctrl+V 粘贴）`);
+  }
+
+  deleteSelected(): void {
+    const comps = this.selectedComponents();
+    if (comps.length === 0) return;
+    for (const c of comps) this.world.remove(c.x, c.y);
+    this.selected.clear();
+    this.onStatus?.(`已删除 ${comps.length} 个元件`);
   }
 
   cut(): void {
-    const def = this.grabSelection();
-    if (!def) return;
-    this.clipboard = def;
-    const n = this.deleteSelection(); // while still SELECT (selRect valid)
-    this.setTemplate(def); // enter stamp mode after deleting
-    this.onStatus?.(`已剪切 ${n} 个元件 · R 旋转 · 点击盖章 · Esc 退出`);
+    const comps = this.selectedComponents();
+    if (comps.length === 0) {
+      this.onStatus?.('请先用箭头(V)选中元件');
+      return;
+    }
+    this.clipboard = extractComps(comps).def;
+    for (const c of comps) this.world.remove(c.x, c.y);
+    this.selected.clear();
+    this.onStatus?.(`已剪切 ${comps.length} 个元件（Ctrl+V 粘贴）`);
   }
 
   paste(): void {
@@ -160,26 +167,38 @@ export class Editor {
       return;
     }
     this.setTemplate(this.clipboard);
-    this.onStatus?.('粘贴模式：R 旋转 · 点击盖章 · Esc 退出');
+    this.onStatus?.('粘贴：移动鼠标，点击放置（R 旋转，Esc 退出）');
   }
 
-  /** Rotate the selected region 90° in place (anchored at its top-left). */
+  duplicate(): void {
+    const comps = this.selectedComponents();
+    if (comps.length === 0) return;
+    const { def, minX, minY } = extractComps(comps);
+    const cells = stampTemplateCells(this.world, def, minX + 1, minY + 1, 0);
+    this.reselect(cells);
+    this.onStatus?.(`已生成副本（${comps.length} 个元件）`);
+  }
+
   rotateSelection(): void {
-    const def = this.grabSelection();
-    if (!def || !this.selRect) return;
-    const r = this.selRect;
-    const w = r.maxX - r.minX + 1;
-    const h = r.maxY - r.minY + 1;
-    this.deleteSelection();
-    stampTemplate(this.world, def, r.minX, r.minY, 1);
-    // a WxH block becomes HxW, anchored at the same top-left
-    this.selRect = { minX: r.minX, minY: r.minY, maxX: r.minX + h - 1, maxY: r.minY + w - 1 };
-    this.onStatus?.('已整体旋转选区（再按 R 继续）');
+    const comps = this.selectedComponents();
+    if (comps.length === 0) {
+      this.rotate();
+      return;
+    }
+    const { def, minX, minY } = extractComps(comps);
+    for (const c of comps) this.world.remove(c.x, c.y);
+    const cells = stampTemplateCells(this.world, def, minX, minY, 1);
+    this.reselect(cells);
+    this.onStatus?.('已旋转选区（再按 R 继续）');
   }
 
-  rotate(): void {
-    this.facing = ((this.facing + 1) % 4) as Dir;
-    this.onToolChange?.(this.tool, this.facing);
+  private reselect(cells: { x: number; y: number }[]): void {
+    const ids = new Set<number>();
+    for (const p of cells) {
+      const c = this.world.get(p.x, p.y);
+      if (c) ids.add(c.id);
+    }
+    this.selected = ids;
   }
 
   private apply(x: number, y: number): void {
@@ -190,6 +209,26 @@ export class Editor {
     } else if (this.tool !== 'HAND' && this.tool !== 'SELECT') {
       this.world.place(this.tool, x, y, this.facing, this.wireColor);
     }
+  }
+
+  private pinComp(c: Component): void {
+    const here = terminalsOf(c).filter((t) => t.x === c.x && t.y === c.y);
+    const term =
+      here.find((t) => t.role === 'wire' || t.role === 'bus') ??
+      here.find((t) => t.role === 'out') ??
+      here[0];
+    if (term) this.onPin?.(term.key, `${LABEL[c.kind]}${c.id}`);
+  }
+
+  private compsInRect(r: SelRect): number[] {
+    const ids: number[] = [];
+    for (const c of this.world.all()) {
+      const hit = footprint(c.kind, c.x, c.y, c.facing).some(
+        (p) => p.x >= r.minX && p.x <= r.maxX && p.y >= r.minY && p.y <= r.maxY,
+      );
+      if (hit) ids.push(c.id);
+    }
+    return ids;
   }
 
   private bind(): void {
@@ -207,7 +246,10 @@ export class Editor {
         return;
       }
       if (e.button === 2) {
-        this.world.remove(cell.x, cell.y); // right-click = quick delete
+        // right-click: select what's under the cursor, then open the context menu
+        const comp = this.world.get(cell.x, cell.y);
+        if (comp && !this.selected.has(comp.id)) this.selected = new Set([comp.id]);
+        this.onContextMenu?.(e.clientX, e.clientY);
         return;
       }
       if (e.button !== 0) return;
@@ -219,32 +261,40 @@ export class Editor {
           else this.panning = true;
           return;
         }
-        if (this.world.interact(cell.x, cell.y)) return; // button toggle / clock cycle
+        if (this.world.interact(cell.x, cell.y)) return;
         if (comp) this.pinComp(comp);
         else this.panning = true;
         return;
       }
+
       if (this.tool === 'SELECT') {
-        const r = this.selRect;
-        const inside =
-          r && cell.x >= r.minX && cell.x <= r.maxX && cell.y >= r.minY && cell.y <= r.maxY;
-        if (inside) {
-          // pick up the selection and drag it
-          const def = this.grabSelection();
-          if (def) {
-            this.moveTemplate = def;
-            this.moveGrab = { dx: cell.x - r!.minX, dy: cell.y - r!.minY };
-            this.deleteSelection();
-            this.selRect = null;
-            this.moving = true;
-            return;
+        const comp = this.world.get(cell.x, cell.y);
+        if (e.shiftKey) {
+          if (comp) {
+            if (this.selected.has(comp.id)) this.selected.delete(comp.id);
+            else this.selected.add(comp.id);
+          } else {
+            this.marqueeing = true;
+            this.marqueeStart = cell;
+            this.marqueeBase = new Set(this.selected);
+            this.marqueeRect = { minX: cell.x, minY: cell.y, maxX: cell.x, maxY: cell.y };
           }
+          return;
         }
-        this.selecting = true;
-        this.selStart = cell;
-        this.selRect = { minX: cell.x, minY: cell.y, maxX: cell.x, maxY: cell.y };
+        if (comp) {
+          if (!this.selected.has(comp.id)) this.selected = new Set([comp.id]);
+          this.moveArmed = true;
+          this.moveStart = cell;
+        } else {
+          this.selected.clear();
+          this.marqueeing = true;
+          this.marqueeStart = cell;
+          this.marqueeBase = new Set();
+          this.marqueeRect = { minX: cell.x, minY: cell.y, maxX: cell.x, maxY: cell.y };
+        }
         return;
       }
+
       this.painting = true;
       this.lastCell = cell;
       this.apply(cell.x, cell.y);
@@ -260,14 +310,19 @@ export class Editor {
         this.lastScreen = { x: e.clientX, y: e.clientY };
         return;
       }
-      if (this.selecting && this.selStart) {
+      if (this.moveArmed && this.hover) {
+        if (this.hover.x !== this.moveStart.x || this.hover.y !== this.moveStart.y) this.moving = true;
+        return;
+      }
+      if (this.marqueeing && this.marqueeStart && this.hover) {
         const c = this.hover;
-        this.selRect = {
-          minX: Math.min(this.selStart.x, c.x),
-          minY: Math.min(this.selStart.y, c.y),
-          maxX: Math.max(this.selStart.x, c.x),
-          maxY: Math.max(this.selStart.y, c.y),
+        this.marqueeRect = {
+          minX: Math.min(this.marqueeStart.x, c.x),
+          minY: Math.min(this.marqueeStart.y, c.y),
+          maxX: Math.max(this.marqueeStart.x, c.x),
+          maxY: Math.max(this.marqueeStart.y, c.y),
         };
+        this.selected = new Set([...this.marqueeBase, ...this.compsInRect(this.marqueeRect)]);
         return;
       }
       if (this.painting && this.tool !== 'TEMPLATE') {
@@ -280,28 +335,22 @@ export class Editor {
     });
 
     const end = () => {
-      if (this.moving && this.moveTemplate && this.hover) {
-        const ax = this.hover.x - this.moveGrab.dx;
-        const ay = this.hover.y - this.moveGrab.dy;
-        const cells = placeTemplate(this.moveTemplate, ax, ay, 0);
-        stampTemplate(this.world, this.moveTemplate, ax, ay, 0);
-        let minX = Infinity;
-        let minY = Infinity;
-        let maxX = -Infinity;
-        let maxY = -Infinity;
-        for (const p of cells) {
-          minX = Math.min(minX, p.x);
-          minY = Math.min(minY, p.y);
-          maxX = Math.max(maxX, p.x);
-          maxY = Math.max(maxY, p.y);
+      if (this.moving && this.hover) {
+        const dx = this.hover.x - this.moveStart.x;
+        const dy = this.hover.y - this.moveStart.y;
+        if (dx !== 0 || dy !== 0) {
+          const comps = this.selectedComponents();
+          const { def, minX, minY } = extractComps(comps);
+          for (const c of comps) this.world.remove(c.x, c.y);
+          const cells = stampTemplateCells(this.world, def, minX + dx, minY + dy, 0);
+          this.reselect(cells);
         }
-        this.selRect = { minX, minY, maxX, maxY };
-        this.moving = false;
-        this.moveTemplate = null;
       }
       this.painting = false;
       this.panning = false;
-      this.selecting = false;
+      this.marqueeing = false;
+      this.moveArmed = false;
+      this.moving = false;
     };
     cv.addEventListener('pointerup', end);
     cv.addEventListener('pointercancel', end);
@@ -314,22 +363,16 @@ export class Editor {
       (e) => {
         e.preventDefault();
         const cam = this.cam;
-
-        // Trackpad pinch and ctrl+wheel both arrive with ctrlKey set.
         if (e.ctrlKey) {
           const dy = Math.max(-40, Math.min(40, e.deltaY));
           cam.zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.01));
           return;
         }
-
-        // Classic mouse wheel: discrete vertical steps, no horizontal travel.
         const mouseWheel = e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 50);
         if (mouseWheel) {
           cam.zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
           return;
         }
-
-        // Trackpad two-finger scroll: pan.
         cam.cx += e.deltaX / cam.px;
         cam.cy += e.deltaY / cam.px;
       },
@@ -361,69 +404,77 @@ export class Editor {
         } else if (k === 'v') {
           e.preventDefault();
           this.paste();
+        } else if (k === 'd') {
+          e.preventDefault();
+          this.duplicate();
         }
         return;
       }
       if (e.repeat) return;
 
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        this.deleteSelected();
+        return;
+      }
+
       switch (e.key.toLowerCase()) {
         case 'r':
-          if (this.tool === 'SELECT' && this.selRect) this.rotateSelection();
-          else this.rotate();
-          break;
-        // left-hand letter layout
-        case 'q':
-        case '1':
-          this.setTool('WIRE');
-          break;
-        case 'w':
-        case '2':
-          this.setTool('AND');
-          break;
-        case 'e':
-        case '3':
-          this.setTool('OR');
-          break;
-        case 'a':
-        case '4':
-          this.setTool('XOR');
-          break;
-        case 's':
-        case '5':
-          this.setTool('NOT');
-          break;
-        case 'z':
-        case '6':
-          this.setTool('BUTTON');
-          break;
-        case 'x':
-        case '7':
-          this.setTool('LAMP');
-          break;
-        case 'c':
-        case '8':
-          this.setTool('CLOCK');
-          break;
-        case 'g':
-        case '9':
-          this.setTool('DFF');
+          this.rotateSelection();
           break;
         case 'v':
-        case '0':
-          this.setTool('BRIDGE');
-          break;
-        case 't':
-          this.setTool('BUS');
-          break;
-        case 'd':
-          this.setTool('DELETE');
-          break;
-        case 'b':
           this.setTool('SELECT');
           break;
-        case 'f':
-        case 'escape':
+        case 'h':
           this.setTool('HAND');
+          break;
+        case 'escape':
+          this.selected.clear();
+          this.setTool('SELECT');
+          break;
+        case 'w':
+          this.setTool('WIRE');
+          break;
+        case 'a':
+          this.setTool('AND');
+          break;
+        case 'o':
+          this.setTool('OR');
+          break;
+        case 'x':
+          this.setTool('XOR');
+          break;
+        case 'n':
+          this.setTool('NOT');
+          break;
+        case 'b':
+          this.setTool('BUTTON');
+          break;
+        case 'l':
+          this.setTool('LAMP');
+          break;
+        case 'k':
+          this.setTool('CLOCK');
+          break;
+        case 'd':
+          this.setTool('DFF');
+          break;
+        case 'g':
+          this.setTool('BRIDGE');
+          break;
+        case 'u':
+          this.setTool('BUS');
+          break;
+        case 'm':
+          this.setTool('MERGE');
+          break;
+        case 's':
+          this.setTool('SPLIT');
+          break;
+        case 'y':
+          this.setTool('DISPLAY');
+          break;
+        case 'e':
+          this.setTool('DELETE');
           break;
       }
     });

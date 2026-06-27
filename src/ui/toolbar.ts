@@ -1,5 +1,4 @@
 import type { Editor, Tool } from '../editor/editor';
-import { LABEL } from '../sim/geometry';
 import { WIRE_COLORS } from '../render/palette';
 import type { TemplateDef } from '../templates';
 
@@ -21,42 +20,10 @@ interface ToolbarHooks {
 
 export interface ToolbarApi {
   refreshTemplates: () => void;
+  refresh: (tool: Tool, facing: number) => void;
 }
 
-// left-hand letter layout (digit aliases 1-0 also work)
-const TOOLS: { tool: Tool; text: string; key: string }[] = [
-  { tool: 'WIRE', text: LABEL.WIRE, key: 'Q' },
-  { tool: 'AND', text: 'AND', key: 'W' },
-  { tool: 'OR', text: 'OR', key: 'E' },
-  { tool: 'XOR', text: 'XOR', key: 'A' },
-  { tool: 'NOT', text: 'NOT', key: 'S' },
-  { tool: 'BUTTON', text: LABEL.BUTTON, key: 'Z' },
-  { tool: 'LAMP', text: LABEL.LAMP, key: 'X' },
-  { tool: 'CLOCK', text: LABEL.CLOCK, key: 'C' },
-  { tool: 'DFF', text: LABEL.DFF, key: 'G' },
-  { tool: 'BRIDGE', text: LABEL.BRIDGE, key: 'V' },
-  { tool: 'BUS', text: LABEL.BUS, key: 'T' },
-  { tool: 'MERGE', text: LABEL.MERGE, key: '' },
-  { tool: 'SPLIT', text: LABEL.SPLIT, key: '' },
-  { tool: 'DISPLAY', text: LABEL.DISPLAY, key: '' },
-  { tool: 'DELETE', text: '删除', key: 'D' },
-  { tool: 'SELECT', text: '框选', key: 'B' },
-  { tool: 'HAND', text: '操作', key: 'F' },
-];
-
 export function buildToolbar(el: HTMLElement, editor: Editor, hooks: ToolbarHooks): ToolbarApi {
-  const buttons = new Map<Tool, HTMLButtonElement>();
-
-  const toolGroup = group(el);
-  for (const t of TOOLS) {
-    const b = document.createElement('button');
-    b.className = 'tool';
-    b.innerHTML = `${t.text}<span class="key">${t.key}</span>`;
-    b.onclick = () => editor.setTool(t.tool);
-    toolGroup.appendChild(b);
-    buttons.set(t.tool, b);
-  }
-
   const rotGroup = group(el);
   const rotBtn = document.createElement('button');
   rotBtn.className = 'tool';
@@ -144,14 +111,11 @@ export function buildToolbar(el: HTMLElement, editor: Editor, hooks: ToolbarHook
 
   const FACE = ['→ 东', '↓ 南', '← 西', '↑ 北'];
   const refresh = (tool: Tool, facing: number) => {
-    for (const [t, b] of buttons) b.classList.toggle('active', t === tool);
     rotBtn.innerHTML = `朝向 ${FACE[facing]}<span class="key">R</span>`;
     if (tool !== 'TEMPLATE') tmplSel.value = '-1';
   };
-  editor.onToolChange = refresh;
-  refresh(editor.tool, editor.facing);
 
-  return { refreshTemplates: rebuildTemplates };
+  return { refreshTemplates: rebuildTemplates, refresh };
 }
 
 function group(parent: HTMLElement): HTMLElement {

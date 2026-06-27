@@ -64,9 +64,10 @@ export class Renderer {
     world: World,
     kernel: Kernel,
     ghosts: Ghost[] | null,
-    selRect: { minX: number; minY: number; maxX: number; maxY: number } | null = null,
+    marquee: { minX: number; minY: number; maxX: number; maxY: number } | null = null,
     probe: { x: number; y: number } | null = null,
     analyzer: Analyzer | null = null,
+    selected: Set<number> | null = null,
   ): void {
     const ctx = this.ctx;
     const cam = this.cam;
@@ -86,12 +87,23 @@ export class Renderer {
     for (const c of world.all()) {
       if (c.x < minX || c.x > maxX || c.y < minY || c.y > maxY) continue;
       this.drawComponent(c, world, kernel);
+      if (selected && selected.has(c.id)) this.drawSelectionHighlight(c);
     }
 
     if (probe) this.drawProbe(world, kernel, probe);
     if (ghosts) for (const g of ghosts) this.drawGhost(g);
-    if (selRect) this.drawSelection(selRect);
+    if (marquee) this.drawSelection(marquee);
     if (analyzer && analyzer.pins.length > 0) this.drawAnalyzer(analyzer);
+  }
+
+  private drawSelectionHighlight(c: Component): void {
+    const ctx = this.ctx;
+    ctx.strokeStyle = COL.ghostStroke;
+    ctx.lineWidth = 2;
+    for (const p of footprint(c.kind, c.x, c.y, c.facing)) {
+      const { sx, sy, s } = this.cellRect(p.x, p.y);
+      ctx.strokeRect(sx + 1.5, sy + 1.5, s - 3, s - 3);
+    }
   }
 
   private drawAnalyzer(a: Analyzer): void {

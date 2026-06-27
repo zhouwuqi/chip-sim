@@ -130,6 +130,53 @@ export function placeTemplate(def: TemplateDef, ax: number, ay: number, rot: Dir
   return rotated.map((p) => ({ ...p, x: ax + p.x - minX, y: ay + p.y - minY }));
 }
 
+/** Build a template from an explicit component list, relative to their top-left. */
+export function extractComps(comps: Component[], name = '剪贴板'): { def: TemplateDef; minX: number; minY: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  for (const c of comps) {
+    for (const p of footprint(c.kind, c.x, c.y, c.facing)) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+    }
+  }
+  if (!isFinite(minX)) {
+    minX = 0;
+    minY = 0;
+  }
+  const def: TemplateDef = {
+    name,
+    desc: '自定义模板',
+    custom: true,
+    parts: comps.map((c) => ({
+      kind: c.kind,
+      dx: c.x - minX,
+      dy: c.y - minY,
+      facing: c.facing,
+      color: c.color,
+      period: c.period,
+    })),
+  };
+  return { def, minX, minY };
+}
+
+/** Stamp a template and return the anchor cell of every placed component. */
+export function stampTemplateCells(
+  world: World,
+  def: TemplateDef,
+  ax: number,
+  ay: number,
+  rot: Dir,
+): { x: number; y: number }[] {
+  const placed = placeTemplate(def, ax, ay, rot);
+  placed.forEach((c, i) => {
+    const comp = world.place(c.kind, c.x, c.y, c.facing, c.color);
+    const period = def.parts[i].period;
+    if (period !== undefined) comp.period = period;
+  });
+  return placed.map((c) => ({ x: c.x, y: c.y }));
+}
+
 export function stampTemplate(world: World, def: TemplateDef, ax: number, ay: number, rot: Dir): void {
   const placed = placeTemplate(def, ax, ay, rot);
   placed.forEach((c, i) => {
