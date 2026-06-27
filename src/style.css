@@ -256,14 +256,23 @@ button.swatch.active {
   bottom: 8px;
   left: 8px;
   z-index: 10;
-  padding: 6px 10px;
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  padding: 7px 12px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--text);
   line-height: 1.5;
   max-width: 60ch;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+#hint.show {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 #hint b {

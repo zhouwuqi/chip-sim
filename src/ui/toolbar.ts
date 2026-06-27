@@ -16,6 +16,7 @@ interface ToolbarHooks {
   onSaveTemplate: () => void;
   onDeleteTemplate: (index: number) => void;
   onTruthTable: () => void;
+  onHelp: () => void;
 }
 
 export interface ToolbarApi {
@@ -108,6 +109,7 @@ export function buildToolbar(el: HTMLElement, editor: Editor, hooks: ToolbarHook
   fileGroup.appendChild(btn('导入', hooks.onImport));
   fileGroup.appendChild(btn('🔗 分享', hooks.onShare, '生成可分享的链接并复制到剪贴板'));
   fileGroup.appendChild(btn('清空', hooks.onClear));
+  fileGroup.appendChild(btn('?', hooks.onHelp, '操作 / 快捷键说明'));
 
   const FACE = ['→ 东', '↓ 南', '← 西', '↑ 北'];
   const refresh = (tool: Tool, facing: number) => {

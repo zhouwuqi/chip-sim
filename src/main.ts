@@ -106,7 +106,6 @@ editor.onStatus = (m) => flash(m);
 const analyzer = new Analyzer();
 editor.onPin = (key, label) => {
   const pinned = analyzer.toggle(key, label);
-  hintEl.style.display = analyzer.pins.length > 0 ? 'none' : '';
   flash(pinned ? `已钉选 ${label} 到波形` : `已取消钉选 ${label}`);
 };
 
@@ -228,6 +227,7 @@ toolbar = buildToolbar(toolbarEl, editor, {
     if ('error' in res) flash(res.error);
     else showTruthTable(res);
   },
+  onHelp: () => showHelp(),
 });
 
 // left tool palette + keep both toolbars in sync with the active tool
@@ -327,11 +327,12 @@ function showTruthTable(tt: TruthTable): void {
   document.body.appendChild(overlay);
 }
 
-const HINT =
-  '<b>V</b>选择(点选/框选/拖动)，选中后右键菜单或 <b>Ctrl+C/X/V/D</b>复制剪切粘贴副本、<b>R</b>旋转、<b>Del</b>删除 · ' +
-  '左栏图标选工具放置(<b>W</b>线 <b>A</b>与 <b>O</b>或 <b>X</b>异或 <b>N</b>非 <b>B</b>钮 <b>L</b>灯 <b>K</b>钟 <b>D</b>触 …) · ' +
-  '<b>H</b>操作：点钮/钟、悬停看值、点线钉波形 · 滚轮缩放 · 空格拖动';
-hintEl.innerHTML = HINT;
+const HELP =
+  '<b>V</b> 选择：点选 / 空白拖动框选 / 拖动移动 · Shift 加选<br>' +
+  '选中后：右键菜单，或 <b>Ctrl+C/X/V/D</b> 复制 / 剪切 / 粘贴 / 复制副本、<b>R</b> 旋转、<b>Del</b> 删除<br>' +
+  '左栏工具：<b>W</b>线 <b>A</b>与 <b>O</b>或 <b>X</b>异或 <b>N</b>非 <b>B</b>钮 <b>L</b>灯 <b>K</b>钟 <b>D</b>触发器 <b>G</b>桥 <b>U</b>总线 <b>M</b>合并 <b>S</b>拆分 <b>Y</b>显示 <b>E</b>删除<br>' +
+  '<b>H</b> 操作：点按钮/时钟、悬停看值并点亮整网、点线钉到时序波形<br>' +
+  '<b>Ctrl+Z/Y</b> 撤销/重做 · 滚轮/捏合缩放 · 空格或中键拖动平移';
 
 // --- main loop ---
 function frame(): void {
@@ -368,10 +369,44 @@ requestAnimationFrame(frame);
 let flashTimer = 0;
 function flash(msg: string): void {
   hintEl.innerHTML = `<b>${msg}</b>`;
+  hintEl.classList.add('show');
   clearTimeout(flashTimer);
-  flashTimer = window.setTimeout(() => {
-    hintEl.innerHTML = HINT;
-  }, 1800);
+  flashTimer = window.setTimeout(() => hintEl.classList.remove('show'), 1600);
+}
+
+function showHelp(): void {
+  document.getElementById('tt-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'tt-overlay';
+  const panel = document.createElement('div');
+  panel.className = 'tt-panel';
+  const remove = () => {
+    overlay.remove();
+    window.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') remove();
+  };
+  window.addEventListener('keydown', onKey);
+  const head = document.createElement('div');
+  head.className = 'tt-head';
+  head.innerHTML = '<span>操作 / 快捷键</span>';
+  const close = document.createElement('button');
+  close.className = 'tool';
+  close.textContent = '关闭 ✕';
+  close.onclick = remove;
+  head.appendChild(close);
+  const body = document.createElement('div');
+  body.className = 'tt-scroll';
+  body.style.lineHeight = '1.9';
+  body.style.fontSize = '13px';
+  body.innerHTML = HELP;
+  panel.append(head, body);
+  overlay.appendChild(panel);
+  overlay.onclick = (e) => {
+    if (e.target === overlay) remove();
+  };
+  document.body.appendChild(overlay);
 }
 
 function seedDemo(): void {
