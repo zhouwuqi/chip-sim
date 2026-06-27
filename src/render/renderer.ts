@@ -160,7 +160,7 @@ export class Renderer {
     const panelH = headH + a.pins.length * rowH + 8;
     const top = H - panelH;
 
-    ctx.fillStyle = 'rgba(13,17,23,0.94)';
+    ctx.fillStyle = COL.gateFill;
     ctx.fillRect(0, top, W, panelH);
     ctx.strokeStyle = COL.gateBorder;
     ctx.lineWidth = 1;
@@ -189,7 +189,7 @@ export class Renderer {
       ctx.fillStyle = bus ? COL.bus : COL.on;
       ctx.fillText(p.label, 8, ry + rowH / 2);
 
-      ctx.strokeStyle = '#1f2a36';
+      ctx.strokeStyle = COL.gateBorder;
       ctx.beginPath();
       ctx.moveTo(waveX, base + 1.5);
       ctx.lineTo(waveX + waveW, base + 1.5);

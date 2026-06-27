@@ -253,10 +253,12 @@ const nav = buildTopNav(topnavEl, editor, {
   theme,
   onToggleTheme: () => {
     applyTheme(theme === 'dark' ? 'light' : 'dark');
+    bottom.setTheme(theme);
     return theme;
   },
 });
 const bottom = buildBottomBar(bottombarEl, editor);
+bottom.setTheme(theme);
 editor.onToolChange = (t) => {
   nav.refresh(t);
   bottom.refresh(t);

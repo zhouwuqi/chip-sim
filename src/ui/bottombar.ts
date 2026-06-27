@@ -37,23 +37,25 @@ const ROWS: Row[] = [
 
 export interface BottomBarApi {
   refresh: (tool: Tool) => void;
+  setTheme: (theme: 'dark' | 'light') => void;
 }
 
 export function buildBottomBar(el: HTMLElement, editor: Editor): BottomBarApi {
   const dpr = window.devicePixelRatio || 1;
   const S = 24;
-  const buttons = new Map<Tool, HTMLButtonElement>();
+  const icons: { tool: Tool; ctx: CanvasRenderingContext2D; btn: HTMLButtonElement }[] = [];
+  let theme: 'dark' | 'light' = document.documentElement.classList.contains('light')
+    ? 'light'
+    : 'dark';
+  let active: Tool = editor.tool;
 
-  const makeIcon = (tool: Tool, color: string) => {
-    const cv = document.createElement('canvas');
-    cv.width = S * dpr;
-    cv.height = S * dpr;
-    cv.style.width = `${S}px`;
-    cv.style.height = `${S}px`;
-    const ctx = cv.getContext('2d')!;
-    ctx.scale(dpr, dpr);
-    drawToolIcon(ctx, tool, S, color);
-    return cv;
+  const normalColor = () => (theme === 'light' ? '#2a2824' : '#e6edf3');
+  const activeColor = () => (theme === 'light' ? '#ffffff' : '#06231f');
+
+  const redraw = () => {
+    for (const ic of icons) {
+      drawToolIcon(ic.ctx, ic.tool, S, ic.tool === active ? activeColor() : normalColor());
+    }
   };
 
   const tip = (name: string, key: string) => {
@@ -71,26 +73,40 @@ export function buildBottomBar(el: HTMLElement, editor: Editor): BottomBarApi {
       continue;
     }
     if (row === 'color') {
-      el.appendChild(buildColorButton(editor, S, dpr));
+      el.appendChild(buildColorButton(editor));
       continue;
     }
     const btn = document.createElement('button');
     btn.className = 'tool';
-    btn.appendChild(makeIcon(row.tool, '#e6edf3'));
+    const cv = document.createElement('canvas');
+    cv.width = S * dpr;
+    cv.height = S * dpr;
+    cv.style.width = `${S}px`;
+    cv.style.height = `${S}px`;
+    const ctx = cv.getContext('2d')!;
+    ctx.scale(dpr, dpr);
+    btn.appendChild(cv);
     btn.appendChild(tip(row.name, row.key));
     btn.onclick = () => editor.setTool(row.tool);
     el.appendChild(btn);
-    buttons.set(row.tool, btn);
+    icons.push({ tool: row.tool, ctx, btn });
   }
+  redraw();
 
-  const refresh = (tool: Tool) => {
-    for (const [t, b] of buttons) b.classList.toggle('active', t === tool);
+  return {
+    refresh: (tool: Tool) => {
+      active = tool;
+      for (const ic of icons) ic.btn.classList.toggle('active', ic.tool === tool);
+      redraw();
+    },
+    setTheme: (t: 'dark' | 'light') => {
+      theme = t;
+      redraw();
+    },
   };
-  refresh(editor.tool);
-  return { refresh };
 }
 
-function buildColorButton(editor: Editor, S: number, dpr: number): HTMLButtonElement {
+function buildColorButton(editor: Editor): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.className = 'tool';
 
@@ -98,7 +114,11 @@ function buildColorButton(editor: Editor, S: number, dpr: number): HTMLButtonEle
   dot.className = 'colordot';
   dot.style.background = WIRE_COLORS[editor.wireColor].on;
   btn.appendChild(dot);
-  btn.appendChild(tipEl('线色'));
+
+  const t = document.createElement('span');
+  t.className = 'tip';
+  t.textContent = '线色';
+  btn.appendChild(t);
 
   const pop = document.createElement('div');
   pop.className = 'pop';
@@ -128,14 +148,5 @@ function buildColorButton(editor: Editor, S: number, dpr: number): HTMLButtonEle
   window.addEventListener('pointerdown', (e) => {
     if (!btn.contains(e.target as Node)) pop.classList.remove('open');
   });
-  void S;
-  void dpr;
   return btn;
-}
-
-function tipEl(name: string): HTMLSpanElement {
-  const t = document.createElement('span');
-  t.className = 'tip';
-  t.textContent = name;
-  return t;
 }
