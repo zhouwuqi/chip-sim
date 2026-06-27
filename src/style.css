@@ -1,0 +1,157 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --muted: #8b949e;
+  --accent: #2f81f7;
+  --on: #39d353;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  -webkit-font-smoothing: antialiased;
+}
+
+#screen {
+  position: fixed;
+  inset: 0;
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+#toolbar {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  user-select: none;
+}
+
+#toolbar .group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding-right: 8px;
+  margin-right: 2px;
+  border-right: 1px solid var(--border);
+}
+
+#toolbar .group:last-child {
+  border-right: none;
+}
+
+#toolbar .label {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 2px;
+}
+
+button.tool {
+  background: #21262d;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+button.tool:hover {
+  background: #2d333b;
+}
+
+button.tool.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+select.tool {
+  background: #21262d;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button.tool .key {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+button.tool.active .key {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+#toolbar input[type="range"] {
+  width: 90px;
+  accent-color: var(--accent);
+}
+
+button.swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+button.swatch:hover {
+  border-color: var(--muted);
+}
+
+button.swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px #fff;
+}
+
+#hint {
+  position: fixed;
+  bottom: 8px;
+  left: 8px;
+  z-index: 10;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 60ch;
+}
+
+#hint b {
+  color: var(--text);
+}
