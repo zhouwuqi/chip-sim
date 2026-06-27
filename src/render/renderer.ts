@@ -20,8 +20,8 @@ const COL = {
   lampOn: '#ffd33d',
   bus: '#7ee0ff',
   busOff: '#274655',
-  ghost: 'rgba(47,129,247,0.45)',
-  ghostStroke: '#2f81f7',
+  ghost: 'rgba(45,212,191,0.4)',
+  ghostStroke: '#2dd4bf',
 };
 
 export interface Ghost {
@@ -235,9 +235,9 @@ export class Renderer {
     const tl = this.cellRect(r.minX, r.minY);
     const w = (r.maxX - r.minX + 1) * tl.s;
     const h = (r.maxY - r.minY + 1) * tl.s;
-    ctx.fillStyle = 'rgba(47,129,247,0.12)';
+    ctx.fillStyle = 'rgba(45,212,191,0.1)';
     ctx.fillRect(tl.sx, tl.sy, w, h);
-    ctx.strokeStyle = '#2f81f7';
+    ctx.strokeStyle = '#2dd4bf';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(tl.sx + 0.5, tl.sy + 0.5, w - 1, h - 1);
