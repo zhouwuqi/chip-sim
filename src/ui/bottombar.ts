@@ -34,6 +34,7 @@ const ROWS: Row[] = [
   'sep',
   { tool: 'REGISTER', name: LABEL.REGISTER, key: 'J' },
   { tool: 'TRISTATE', name: LABEL.TRISTATE, key: 'T' },
+  { tool: 'ALU', name: LABEL.ALU, key: 'C' },
   'sep',
   { tool: 'DELETE', name: '删除', key: 'E' },
 ];

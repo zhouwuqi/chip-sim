@@ -43,7 +43,8 @@ export class Kernel {
   }
 
   tick(): void {
-    const { gates, sources, clocks, dffs, merges, splits, registers, tristates } = this.compiled;
+    const { gates, sources, clocks, dffs, merges, splits, registers, tristates, alus } =
+      this.compiled;
     const cur = this.cur;
     const next = this.next;
     next.fill(0);
@@ -121,6 +122,19 @@ export class Kernel {
     for (let i = 0; i < tristates.length; i++) {
       const t = tristates[i];
       if (cur[t.en]) next[t.out] |= cur[t.in] & BUS_MASK;
+    }
+
+    // ALU: combinational add/subtract with carry-out and zero flags.
+    for (let i = 0; i < alus.length; i++) {
+      const u = alus[i];
+      const a = cur[u.a] & BUS_MASK;
+      const b = cur[u.b] & BUS_MASK;
+      // subtract via two's complement: a - b = a + (~b & MASK) + 1
+      const sum = cur[u.sub] ? a + ((~b) & BUS_MASK) + 1 : a + b;
+      const result = sum & BUS_MASK;
+      next[u.out] |= result;
+      next[u.carry] |= (sum >> BUS_WIDTH) & 1; // carry-out (no-borrow in sub mode)
+      if (result === 0) next[u.zero] |= 1;
     }
 
     this.cur = next;

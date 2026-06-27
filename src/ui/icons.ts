@@ -142,6 +142,10 @@ export function drawToolIcon(ctx: CanvasRenderingContext2D, tool: Tool, S: numbe
       ctx.stroke();
       break;
     }
+    case 'ALU':
+      box();
+      sym('±');
+      break;
     case 'AND':
     case 'OR':
     case 'XOR':

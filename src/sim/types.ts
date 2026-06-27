@@ -23,7 +23,8 @@ export type ComponentKind =
   | 'SPLIT'
   | 'DISPLAY'
   | 'REGISTER'
-  | 'TRISTATE';
+  | 'TRISTATE'
+  | 'ALU';
 
 export const GATE_KINDS: ComponentKind[] = ['AND', 'OR', 'XOR', 'NOT'];
 
@@ -135,6 +136,22 @@ export interface CompiledTristate {
   compId: number;
 }
 
+/**
+ * ALU: combinational 4-bit add/subtract. result = a + b (sub=0) or a - b
+ * (sub=1, two's complement). `carry` is the carry-out of the addition (in
+ * subtract mode, carry=1 means no borrow). `zero` is high when result == 0.
+ * Like a gate, it has a 1-tick delay; gate the result onto a bus with a TRISTATE.
+ */
+export interface CompiledAlu {
+  a: number;
+  b: number;
+  sub: number;
+  out: number;
+  carry: number;
+  zero: number;
+  compId: number;
+}
+
 export interface Compiled {
   numNets: number;
   gates: CompiledGate[];
@@ -147,6 +164,7 @@ export interface Compiled {
   displays: CompiledDisplay[];
   registers: CompiledRegister[];
   tristates: CompiledTristate[];
+  alus: CompiledAlu[];
   /** terminal-key -> net index, used by the renderer to colour pins/wires. */
   netOf: Record<string, number>;
 }

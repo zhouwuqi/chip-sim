@@ -117,6 +117,7 @@ export function compile(components: Iterable<Component>): Compiled {
   const displays: Compiled['displays'] = [];
   const registers: Compiled['registers'] = [];
   const tristates: Compiled['tristates'] = [];
+  const alus: Compiled['alus'] = [];
 
   for (const c of list) {
     switch (c.kind) {
@@ -190,6 +191,17 @@ export function compile(components: Iterable<Component>): Compiled {
           compId: c.id,
         });
         break;
+      case 'ALU':
+        alus.push({
+          a: idOf(`${c.id}:aluA`),
+          b: idOf(`${c.id}:aluB`),
+          sub: idOf(`${c.id}:alusub`),
+          out: idOf(`${c.id}:aluR`),
+          carry: idOf(`${c.id}:alucar`),
+          zero: idOf(`${c.id}:aluzero`),
+          compId: c.id,
+        });
+        break;
       // WIRE / BUS / BRIDGE have no behaviour; they only contribute connectivity.
     }
   }
@@ -206,6 +218,7 @@ export function compile(components: Iterable<Component>): Compiled {
     displays,
     registers,
     tristates,
+    alus,
     netOf,
   };
 }

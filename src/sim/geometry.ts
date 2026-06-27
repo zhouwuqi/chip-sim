@@ -35,6 +35,9 @@ function rotCell(dx: number, dy: number, facing: Dir): { x: number; y: number } 
 // left); MERGE/SPLIT are BUS_WIDTH tall (one cell per bit).
 export function heightOf(kind: ComponentKind): number {
   if (kind === 'AND' || kind === 'OR' || kind === 'XOR') return 2;
+  // ALU is 3 tall: A and B bus inputs sit on rows 0 and 2 with a gap between, so
+  // their feed buses are never adjacent (buses can't be colour-insulated).
+  if (kind === 'ALU') return 3;
   if (kind === 'MERGE' || kind === 'SPLIT') return BUS_WIDTH;
   return 1;
 }
@@ -104,6 +107,18 @@ function localPorts(kind: ComponentKind): LocalPort[] {
         { dx: 0, dy: 0, edge: 2, role: 'bus', tag: 'tin' }, // bus in: left
         { dx: 0, dy: 0, edge: 0, role: 'bus', tag: 'tout' }, // bus out: right
         { dx: 0, dy: 0, edge: 1, role: 'in', tag: 'ten', inputIndex: 0 }, // enable: bottom
+      ];
+    case 'ALU':
+      // 3-tall: A bus in (row 0 left), B bus in (row 2 left, gap row keeps the
+      // two feed buses apart), result (row 0 right), sub control (row 0 top),
+      // carry (row 2 right), zero (row 2 bottom).
+      return [
+        { dx: 0, dy: 0, edge: 2, role: 'bus', tag: 'aluA' }, // A in
+        { dx: 0, dy: 2, edge: 2, role: 'bus', tag: 'aluB' }, // B in
+        { dx: 0, dy: 0, edge: 0, role: 'bus', tag: 'aluR' }, // result
+        { dx: 0, dy: 0, edge: 3, role: 'in', tag: 'alusub', inputIndex: 0 }, // sub
+        { dx: 0, dy: 2, edge: 0, role: 'out', tag: 'alucar' }, // carry
+        { dx: 0, dy: 2, edge: 1, role: 'out', tag: 'aluzero' }, // zero
       ];
     case 'AND':
     case 'OR':
@@ -201,6 +216,7 @@ export const GATE_SYMBOL: Record<ComponentKind, string> = {
   DISPLAY: '',
   REGISTER: 'R',
   TRISTATE: '▷',
+  ALU: '±',
 };
 
 export const LABEL: Record<ComponentKind, string> = {
@@ -220,4 +236,5 @@ export const LABEL: Record<ComponentKind, string> = {
   DISPLAY: '显示',
   REGISTER: '寄存器',
   TRISTATE: '三态',
+  ALU: 'ALU',
 };

@@ -698,7 +698,7 @@ export class Renderer {
       ctx.fill();
     }
     // show facing for directional parts (arrow from the anchor cell)
-    if (['AND', 'OR', 'XOR', 'NOT', 'DFF', 'REGISTER', 'TRISTATE'].includes(g.kind)) {
+    if (['AND', 'OR', 'XOR', 'NOT', 'DFF', 'REGISTER', 'TRISTATE', 'ALU'].includes(g.kind)) {
       const { sx, sy, s } = this.cellRect(g.x, g.y);
       const d = DIRS[g.facing];
       ctx.strokeStyle = COL.ghostStroke;

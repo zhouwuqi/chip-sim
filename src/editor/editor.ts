@@ -479,6 +479,9 @@ export class Editor {
         case 't':
           this.setTool('TRISTATE');
           break;
+        case 'c':
+          this.setTool('ALU');
+          break;
         case 'e':
           this.setTool('DELETE');
           break;
