@@ -13,9 +13,8 @@ interface NavHooks {
   onClear: () => void;
   templates: () => TemplateDef[];
   onDeleteTemplate: (index: number) => void;
-  accents: { name: string; hex: string; strong: string }[];
-  currentAccent: string;
-  onAccent: (a: { name: string; hex: string; strong: string }) => void;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => 'dark' | 'light';
 }
 
 export interface NavApi {
@@ -77,46 +76,19 @@ export function buildTopNav(el: HTMLElement, editor: Editor, hooks: NavHooks): N
   const fileBtn = navbtn('文件 ▾', () => {}, '保存 / 读取 / 导入导出');
   actions.appendChild(fileBtn);
 
-  const themeBtn = navbtn('🎨', () => {}, '主题色');
+  const ICON = { dark: '🌙', light: '☀️' };
+  let theme = hooks.theme;
+  const themeBtn = navbtn(ICON[theme], () => {}, '深色 / 浅色主题');
+  themeBtn.onclick = () => {
+    theme = hooks.onToggleTheme();
+    themeBtn.textContent = ICON[theme];
+  };
   actions.appendChild(themeBtn);
 
   const sep = document.createElement('div');
   sep.className = 'nav-sep';
   actions.appendChild(sep);
   actions.appendChild(navbtn('?', hooks.onHelp, '操作 / 快捷键'));
-
-  // theme-colour popover
-  const themeMenu = document.getElementById('thememenu') as HTMLElement;
-  const swatches: HTMLButtonElement[] = [];
-  themeMenu.replaceChildren(
-    ...hooks.accents.map((a) => {
-      const sw = document.createElement('button');
-      sw.className = 'swatch';
-      sw.title = a.name;
-      sw.style.background = a.hex;
-      if (a.hex === hooks.currentAccent) sw.classList.add('active');
-      sw.onclick = () => {
-        hooks.onAccent(a);
-        swatches.forEach((s) => s.classList.toggle('active', s === sw));
-        themeMenu.classList.remove('open');
-      };
-      swatches.push(sw);
-      return sw;
-    }),
-  );
-  themeBtn.onclick = (e) => {
-    e.stopPropagation();
-    const r = themeBtn.getBoundingClientRect();
-    themeMenu.style.top = `${r.bottom + 6}px`;
-    themeMenu.style.right = `${window.innerWidth - r.right}px`;
-    themeMenu.style.left = 'auto';
-    themeMenu.classList.toggle('open');
-  };
-  window.addEventListener('pointerdown', (e) => {
-    if (!themeMenu.contains(e.target as Node) && e.target !== themeBtn) {
-      themeMenu.classList.remove('open');
-    }
-  });
 
   // file dropdown menu
   const fileMenu = document.getElementById('filemenu') as HTMLElement;

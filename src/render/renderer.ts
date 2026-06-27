@@ -6,10 +6,27 @@ import { Camera } from './camera';
 import { wireColor } from './palette';
 import type { Analyzer } from '../analyzer';
 
-const COL = {
+interface Palette {
+  bg: string;
+  dot: string;
+  on: string;
+  off: string;
+  wireOff: string;
+  gateFill: string;
+  gateBorder: string;
+  text: string;
+  lampOff: string;
+  lampOn: string;
+  bus: string;
+  busOff: string;
+  ghost: string;
+  ghostStroke: string;
+  selFill: string;
+}
+
+const DARK: Palette = {
   bg: '#0d1117',
-  grid: '#2a313c',
-  gridStrong: '#3c4654',
+  dot: '#3a4350',
   on: '#39d353',
   off: '#30404d',
   wireOff: '#2a3947',
@@ -22,13 +39,29 @@ const COL = {
   busOff: '#274655',
   ghost: 'rgba(45,212,191,0.4)',
   ghostStroke: '#2dd4bf',
-  selFill: 'rgba(45,212,191,0.1)',
+  selFill: 'rgba(45,212,191,0.12)',
 };
 
-function hexToRgba(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
+const LIGHT: Palette = {
+  bg: '#f5f2ec',
+  dot: '#cdc6b6',
+  on: '#16a34a',
+  off: '#9aa39a',
+  wireOff: '#bcb6a8',
+  gateFill: '#fffefb',
+  gateBorder: '#ddd6c8',
+  text: '#2a2824',
+  lampOff: '#ddd2bb',
+  lampOn: '#f59e0b',
+  bus: '#0891b2',
+  busOff: '#a9c2c8',
+  ghost: 'rgba(13,148,136,0.32)',
+  ghostStroke: '#0d9488',
+  selFill: 'rgba(13,148,136,0.1)',
+};
+
+// active palette (mutated in place by setTheme so all methods see the change)
+const COL: Palette = { ...DARK };
 
 export interface Ghost {
   kind: ComponentKind | 'DELETE';
@@ -61,11 +94,9 @@ export class Renderer {
     this.cam.viewH = h;
   }
 
-  /** Recolour the selection/marquee/ghost accents to match the UI theme. */
-  setAccent(hex: string): void {
-    COL.ghostStroke = hex;
-    COL.ghost = hexToRgba(hex, 0.4);
-    COL.selFill = hexToRgba(hex, 0.1);
+  /** Switch the canvas palette between dark and light. */
+  setTheme(theme: 'dark' | 'light'): void {
+    Object.assign(COL, theme === 'light' ? LIGHT : DARK);
   }
 
   private valOf(key: string, k: Kernel): number {
@@ -258,27 +289,52 @@ export class Renderer {
   }
 
   private drawGrid(): void {
-    const ctx = this.ctx;
     const cam = this.cam;
-    const px = cam.px;
-    if (px < 7) return; // too zoomed out — dots would be noise
-    const x0 = Math.floor(cam.screenToWorldX(0));
-    const x1 = Math.ceil(cam.screenToWorldX(cam.viewW));
-    const y0 = Math.floor(cam.screenToWorldY(0));
-    const y1 = Math.ceil(cam.screenToWorldY(cam.viewH));
-    // dot matrix at every grid intersection; every 5th dot a touch larger/brighter
-    for (let y = y0; y <= y1; y++) {
-      const sy = cam.worldToScreenY(y);
-      for (let x = x0; x <= x1; x++) {
-        const sx = cam.worldToScreenX(x);
-        const major = x % 5 === 0 && y % 5 === 0;
-        ctx.fillStyle = major ? COL.gridStrong : COL.grid;
-        const r = major ? 1.6 : 1.1;
-        ctx.beginPath();
-        ctx.arc(sx, sy, r, 0, Math.PI * 2);
-        ctx.fill();
+    const u = cam.px; // screen px per 1-cell
+    if (!(u > 0)) return;
+
+    // Figma-style level-of-detail dot grid: dots sit on cell corners, the step
+    // coarsens by powers of 2 as you zoom out, and adjacent levels cross-fade so
+    // finer dots "grow in" when zooming in. Never finer than 1 cell.
+    const R = 1.4; // max dot radius (screen px)
+    const B = 17; // comfortable minimum on-screen dot spacing
+    let lvl = 1;
+    while (u * lvl < B) lvl *= 2; // coarsen until spacing >= B
+    const ss = (x: number) => x * x * (3 - 2 * x);
+    const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+
+    const layers: { step: number; op: number; r: number }[] = [];
+    if (lvl === 1) {
+      layers.push({ step: 1, op: 1, r: R });
+    } else {
+      const t = clamp01(Math.log2((u * lvl) / B)); // position in this octave
+      const fine = ss(t);
+      const coarse = 1 - fine;
+      const rad = (op: number) => R * (0.55 + 0.45 * op);
+      if (coarse > 0.02) layers.push({ step: lvl, op: coarse, r: rad(coarse) });
+      if (fine > 0.02) layers.push({ step: lvl / 2, op: fine, r: rad(fine) });
+    }
+
+    const ctx = this.ctx;
+    const wx0 = cam.screenToWorldX(0);
+    const wx1 = cam.screenToWorldX(cam.viewW);
+    const wy0 = cam.screenToWorldY(0);
+    const wy1 = cam.screenToWorldY(cam.viewH);
+    for (const l of layers) {
+      ctx.globalAlpha = l.op;
+      ctx.fillStyle = COL.dot;
+      const gx0 = Math.floor(wx0 / l.step) * l.step;
+      const gy0 = Math.floor(wy0 / l.step) * l.step;
+      for (let y = gy0; y <= wy1; y += l.step) {
+        const sy = cam.worldToScreenY(y);
+        for (let x = gx0; x <= wx1; x += l.step) {
+          ctx.beginPath();
+          ctx.arc(cam.worldToScreenX(x), sy, l.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
+    ctx.globalAlpha = 1;
   }
 
   private cellRect(x: number, y: number): { sx: number; sy: number; s: number } {
@@ -462,7 +518,7 @@ export class Renderer {
     const { sx, sy, s } = this.cellRect(c.x, c.y);
     const on = this.valOf(`b:${c.id}`, kernel);
     const pad = s * 0.16;
-    ctx.fillStyle = on ? COL.on : '#243240';
+    ctx.fillStyle = on ? COL.on : COL.gateFill;
     ctx.strokeStyle = on ? COL.on : COL.gateBorder;
     ctx.lineWidth = 2;
     roundRect(ctx, sx + pad, sy + pad, s - pad * 2, s - pad * 2, s * 0.18);
@@ -572,7 +628,7 @@ export class Renderer {
     const { sx, sy, s } = this.cellRect(c.x, c.y);
     const on = this.valOf(`c:${c.id}`, kernel);
     const pad = s * 0.14;
-    ctx.fillStyle = on ? COL.on : '#243240';
+    ctx.fillStyle = on ? COL.on : COL.gateFill;
     ctx.strokeStyle = on ? COL.on : COL.gateBorder;
     ctx.lineWidth = 2;
     roundRect(ctx, sx + pad, sy + pad, s - pad * 2, s - pad * 2, s * 0.16);
