@@ -2,7 +2,8 @@ import type { World } from '../world';
 import type { Camera } from '../render/camera';
 import type { ComponentKind, Dir } from '../sim/types';
 import type { Ghost } from '../render/renderer';
-import { placeTemplate, stampTemplate, type TemplateDef } from '../templates';
+import { placeTemplate, stampTemplate, extractTemplate, type TemplateDef } from '../templates';
+import { footprint } from '../sim/geometry';
 
 export type Tool = ComponentKind | 'DELETE' | 'HAND' | 'TEMPLATE' | 'SELECT';
 
@@ -18,8 +19,10 @@ export class Editor {
   facing: Dir = 0;
   wireColor = 0;
   template: TemplateDef | null = null;
+  clipboard: TemplateDef | null = null;
   onUndo: (() => void) | null = null;
   onRedo: (() => void) | null = null;
+  onStatus: ((msg: string) => void) | null = null;
   private hover: { x: number; y: number } | null = null;
   private painting = false;
   private panning = false;
@@ -42,6 +45,11 @@ export class Editor {
   /** Current box-selection rectangle (for rendering / save-as-template). */
   selection(): SelRect | null {
     return this.tool === 'SELECT' ? this.selRect : null;
+  }
+
+  /** Cell to probe (highlight its net + show value): hover while in 操作 mode. */
+  probe(): { x: number; y: number } | null {
+    return this.tool === 'HAND' && this.hover ? this.hover : null;
   }
 
   /** Cells to draw as a translucent placement preview under the cursor. */
@@ -75,6 +83,74 @@ export class Editor {
   setTemplate(def: TemplateDef): void {
     this.template = def;
     this.setTool('TEMPLATE');
+  }
+
+  /** Extract the components fully inside the current selection as a template. */
+  private grabSelection(): TemplateDef | null {
+    if (!this.selRect) {
+      this.onStatus?.('请先用「框选」(B) 框住元件');
+      return null;
+    }
+    const def = extractTemplate([...this.world.all()], '剪贴板', this.selRect);
+    if (def.parts.length === 0) {
+      this.onStatus?.('选区内没有元件');
+      return null;
+    }
+    return def;
+  }
+
+  /** Delete every component fully inside the current selection. */
+  private deleteSelection(): number {
+    if (!this.selRect) return 0;
+    const r = this.selRect;
+    const victims = [...this.world.all()].filter((c) =>
+      footprint(c.kind, c.x, c.y, c.facing).every(
+        (p) => p.x >= r.minX && p.x <= r.maxX && p.y >= r.minY && p.y <= r.maxY,
+      ),
+    );
+    for (const c of victims) this.world.remove(c.x, c.y);
+    return victims.length;
+  }
+
+  /** Copy the selection and immediately enter the rubber-stamp paste mode. */
+  copy(): void {
+    const def = this.grabSelection();
+    if (!def) return;
+    this.clipboard = def;
+    this.setTemplate(def); // R 旋转 · 点击连续盖章 · Esc 退出
+    this.onStatus?.(`已复制 ${def.parts.length} 个元件 · R 旋转 · 点击盖章 · Esc 退出`);
+  }
+
+  cut(): void {
+    const def = this.grabSelection();
+    if (!def) return;
+    this.clipboard = def;
+    const n = this.deleteSelection(); // while still SELECT (selRect valid)
+    this.setTemplate(def); // enter stamp mode after deleting
+    this.onStatus?.(`已剪切 ${n} 个元件 · R 旋转 · 点击盖章 · Esc 退出`);
+  }
+
+  paste(): void {
+    if (!this.clipboard) {
+      this.onStatus?.('剪贴板为空');
+      return;
+    }
+    this.setTemplate(this.clipboard);
+    this.onStatus?.('粘贴模式：R 旋转 · 点击盖章 · Esc 退出');
+  }
+
+  /** Rotate the selected region 90° in place (anchored at its top-left). */
+  rotateSelection(): void {
+    const def = this.grabSelection();
+    if (!def || !this.selRect) return;
+    const r = this.selRect;
+    const w = r.maxX - r.minX + 1;
+    const h = r.maxY - r.minY + 1;
+    this.deleteSelection();
+    stampTemplate(this.world, def, r.minX, r.minY, 1);
+    // a WxH block becomes HxW, anchored at the same top-left
+    this.selRect = { minX: r.minX, minY: r.minY, maxX: r.minX + h - 1, maxY: r.minY + w - 1 };
+    this.onStatus?.('已整体旋转选区（再按 R 继续）');
   }
 
   rotate(): void {
@@ -210,6 +286,15 @@ export class Editor {
         } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
           e.preventDefault();
           this.onRedo?.();
+        } else if (k === 'c') {
+          e.preventDefault();
+          this.copy();
+        } else if (k === 'x') {
+          e.preventDefault();
+          this.cut();
+        } else if (k === 'v') {
+          e.preventDefault();
+          this.paste();
         }
         return;
       }
@@ -217,7 +302,8 @@ export class Editor {
 
       switch (e.key.toLowerCase()) {
         case 'r':
-          this.rotate();
+          if (this.tool === 'SELECT' && this.selRect) this.rotateSelection();
+          else this.rotate();
           break;
         // left-hand letter layout
         case 'q':
@@ -259,6 +345,9 @@ export class Editor {
         case 'v':
         case '0':
           this.setTool('BRIDGE');
+          break;
+        case 't':
+          this.setTool('BUS');
           break;
         case 'd':
           this.setTool('DELETE');

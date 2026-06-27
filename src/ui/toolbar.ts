@@ -12,6 +12,7 @@ interface ToolbarHooks {
   onRedo: () => void;
   onExport: () => void;
   onImport: () => void;
+  onShare: () => void;
   templates: () => TemplateDef[];
   onSaveTemplate: () => void;
   onDeleteTemplate: (index: number) => void;
@@ -33,6 +34,10 @@ const TOOLS: { tool: Tool; text: string; key: string }[] = [
   { tool: 'CLOCK', text: LABEL.CLOCK, key: 'C' },
   { tool: 'DFF', text: LABEL.DFF, key: 'G' },
   { tool: 'BRIDGE', text: LABEL.BRIDGE, key: 'V' },
+  { tool: 'BUS', text: LABEL.BUS, key: 'T' },
+  { tool: 'MERGE', text: LABEL.MERGE, key: '' },
+  { tool: 'SPLIT', text: LABEL.SPLIT, key: '' },
+  { tool: 'DISPLAY', text: LABEL.DISPLAY, key: '' },
   { tool: 'DELETE', text: '删除', key: 'D' },
   { tool: 'SELECT', text: '框选', key: 'B' },
   { tool: 'HAND', text: '操作', key: 'F' },
@@ -132,6 +137,7 @@ export function buildToolbar(el: HTMLElement, editor: Editor, hooks: ToolbarHook
   fileGroup.appendChild(btn('读取', hooks.onLoad));
   fileGroup.appendChild(btn('导出', hooks.onExport));
   fileGroup.appendChild(btn('导入', hooks.onImport));
+  fileGroup.appendChild(btn('🔗 分享', hooks.onShare, '生成可分享的链接并复制到剪贴板'));
   fileGroup.appendChild(btn('清空', hooks.onClear));
 
   const FACE = ['→ 东', '↓ 南', '← 西', '↑ 北'];

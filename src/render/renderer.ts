@@ -17,6 +17,8 @@ const COL = {
   text: '#c9d1d9',
   lampOff: '#3a2e1a',
   lampOn: '#ffd33d',
+  bus: '#7ee0ff',
+  busOff: '#274655',
   ghost: 'rgba(47,129,247,0.45)',
   ghostStroke: '#2f81f7',
 };
@@ -31,6 +33,7 @@ export interface Ghost {
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private dpr = 1;
+  private frame = 0;
   cam = new Camera();
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -61,9 +64,11 @@ export class Renderer {
     kernel: Kernel,
     ghosts: Ghost[] | null,
     selRect: { minX: number; minY: number; maxX: number; maxY: number } | null = null,
+    probe: { x: number; y: number } | null = null,
   ): void {
     const ctx = this.ctx;
     const cam = this.cam;
+    this.frame++;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = COL.bg;
     ctx.fillRect(0, 0, cam.viewW, cam.viewH);
@@ -81,8 +86,61 @@ export class Renderer {
       this.drawComponent(c, world, kernel);
     }
 
+    if (probe) this.drawProbe(world, kernel, probe);
     if (ghosts) for (const g of ghosts) this.drawGhost(g);
     if (selRect) this.drawSelection(selRect);
+  }
+
+  /** Hover-probe: highlight the whole net under the cursor and read its value. */
+  private drawProbe(world: World, kernel: Kernel, cell: { x: number; y: number }): void {
+    const comp = world.get(cell.x, cell.y);
+    if (!comp) return;
+    const here = terminalsOf(comp).filter((t) => t.x === cell.x && t.y === cell.y);
+    if (here.length === 0) return;
+    // prefer a wire/bus terminal so probing a line traces that line
+    const term = here.find((t) => t.role === 'wire' || t.role === 'bus') ?? here[0];
+    const net = kernel.compiled.netOf[term.key];
+    if (net === undefined) return;
+
+    // collect every cell carrying a terminal on this net
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = '#ffd33d';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#ffd33d';
+    ctx.shadowBlur = 8;
+    const seen = new Set<string>();
+    for (const c of world.all()) {
+      for (const t of terminalsOf(c)) {
+        if (kernel.compiled.netOf[t.key] !== net) continue;
+        const k = `${t.x},${t.y}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const { sx, sy, s } = this.cellRect(t.x, t.y);
+        ctx.strokeRect(sx + 2, sy + 2, s - 4, s - 4);
+      }
+    }
+    ctx.restore();
+
+    // value readout near the cursor
+    const v = kernel.value(net);
+    const bus = term.role === 'bus';
+    const label = bus ? `值 = ${v}  (0x${v.toString(16).toUpperCase()})` : `值 = ${v}`;
+    const { sx, sy, s } = this.cellRect(cell.x, cell.y);
+    ctx.font = '12px ui-monospace, monospace';
+    const tw = ctx.measureText(label).width;
+    const bx = sx + s + 6;
+    const by = sy - 4;
+    ctx.fillStyle = 'rgba(13,17,23,0.92)';
+    ctx.strokeStyle = '#ffd33d';
+    ctx.lineWidth = 1;
+    roundRect(ctx, bx, by, tw + 12, 20, 5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffd33d';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, bx + 6, by + 11);
   }
 
   private drawSelection(r: { minX: number; minY: number; maxX: number; maxY: number }): void {
@@ -149,9 +207,22 @@ export class Renderer {
       case 'BRIDGE':
         this.drawBridge(c, world, kernel);
         break;
+      case 'BUS':
+        this.drawBus(c, world, kernel);
+        break;
+      case 'DISPLAY':
+        this.drawDisplay(c, kernel);
+        break;
       default:
         this.drawGate(c, kernel);
     }
+  }
+
+  /** Marching-ants dash so powered lines look like flowing signal. */
+  private flowDash(s: number): void {
+    const dash = Math.max(3, s * 0.22);
+    this.ctx.setLineDash([dash, dash * 0.8]);
+    this.ctx.lineDashOffset = -(this.frame * 0.6);
   }
 
   private drawWire(c: Component, world: World, kernel: Kernel): void {
@@ -165,6 +236,7 @@ export class Renderer {
     ctx.strokeStyle = paint;
     ctx.lineWidth = Math.max(2, s * 0.16);
     ctx.lineCap = 'round';
+    if (on) this.flowDash(s);
 
     let armDrawn = false;
     for (let e = 0; e < 4; e++) {
@@ -186,6 +258,7 @@ export class Renderer {
         armDrawn = true;
       }
     }
+    ctx.setLineDash([]);
 
     // node dot (always, so isolated wires are visible)
     ctx.fillStyle = paint;
@@ -193,6 +266,59 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(cxp, cyp, r, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  private drawBus(c: Component, world: World, kernel: Kernel): void {
+    const ctx = this.ctx;
+    const { sx, sy, s } = this.cellRect(c.x, c.y);
+    const cxp = sx + s / 2;
+    const cyp = sy + s / 2;
+    const on = this.valOf(`bus:${c.id}`, kernel) !== 0;
+    const paint = on ? COL.bus : COL.busOff;
+    ctx.strokeStyle = paint;
+    ctx.lineWidth = Math.max(3, s * 0.3);
+    ctx.lineCap = 'round';
+    if (on) this.flowDash(s);
+    let arm = false;
+    for (let e = 0; e < 4; e++) {
+      const d = DIRS[e];
+      const nx = c.x + d.x;
+      const ny = c.y + d.y;
+      const n = world.get(nx, ny);
+      if (!n) continue;
+      const want = opposite(e);
+      if (terminalsOf(n).some((t) => t.x === nx && t.y === ny && t.edge === want && t.role === 'bus')) {
+        ctx.beginPath();
+        ctx.moveTo(cxp, cyp);
+        ctx.lineTo(cxp + (d.x * s) / 2, cyp + (d.y * s) / 2);
+        ctx.stroke();
+        arm = true;
+      }
+    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = paint;
+    const r = Math.max(2.5, s * (arm ? 0.13 : 0.2));
+    ctx.beginPath();
+    ctx.arc(cxp, cyp, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private drawDisplay(c: Component, kernel: Kernel): void {
+    const ctx = this.ctx;
+    const { sx, sy, s } = this.cellRect(c.x, c.y);
+    const v = this.valOf(`${c.id}:din`, kernel);
+    const pad = s * 0.1;
+    ctx.fillStyle = '#10171f';
+    ctx.strokeStyle = v !== 0 ? COL.bus : COL.gateBorder;
+    ctx.lineWidth = 2;
+    roundRect(ctx, sx + pad, sy + pad, s - pad * 2, s - pad * 2, s * 0.12);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = v !== 0 ? COL.bus : '#4a5560';
+    ctx.font = `bold ${Math.round(s * 0.5)}px ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(v.toString(16).toUpperCase(), sx + s / 2, sy + s / 2 + 1);
   }
 
   /** Colour of a wire neighbour on the given edges, so the bridge matches it. */
@@ -307,18 +433,23 @@ export class Renderer {
       const px = ccx + (d.x * s) / 2;
       const py = ccy + (d.y * s) / 2;
       const on = this.valOf(t.key, kernel);
-      if (t.role === 'out') {
-        ctx.strokeStyle = on ? COL.on : COL.off;
-        ctx.lineWidth = Math.max(2, s * 0.06);
+      const bus = t.role === 'bus';
+      if (t.role === 'out' || bus) {
+        ctx.strokeStyle = on ? (bus ? COL.bus : COL.on) : COL.off;
+        ctx.lineWidth = Math.max(2, s * (bus ? 0.16 : 0.06));
         ctx.beginPath();
         ctx.moveTo(ccx, ccy);
         ctx.lineTo(px, py);
         ctx.stroke();
       }
-      ctx.fillStyle = on ? COL.on : COL.off;
-      ctx.beginPath();
-      ctx.arc(px, py, s * 0.1, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillStyle = on ? (bus ? COL.bus : COL.on) : COL.off;
+      if (bus) {
+        ctx.fillRect(px - s * 0.13, py - s * 0.13, s * 0.26, s * 0.26);
+      } else {
+        ctx.beginPath();
+        ctx.arc(px, py, s * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
       // clock-edge wedge on the DFF's CLK pin
       if (t.key.endsWith(':clk')) {
         const wedge = s * 0.13;

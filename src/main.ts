@@ -39,16 +39,28 @@ function persist(): void {
   }
 }
 
-// --- load previous session, or seed a demo ---
-const saved = localStorage.getItem(SAVE_KEY);
-if (saved) {
+// --- load: shared URL > previous session > demo ---
+function tryLoadFromHash(): boolean {
+  const m = location.hash.match(/[#&]c=([^&]+)/);
+  if (!m) return false;
   try {
-    world.load(saved);
+    world.load(decodeURIComponent(escape(atob(m[1]))));
+    return true;
   } catch {
+    return false;
+  }
+}
+if (!tryLoadFromHash()) {
+  const saved = localStorage.getItem(SAVE_KEY);
+  if (saved) {
+    try {
+      world.load(saved);
+    } catch {
+      seedDemo();
+    }
+  } else {
     seedDemo();
   }
-} else {
-  seedDemo();
 }
 renderer.cam.cx = 3;
 renderer.cam.cy = 1;
@@ -84,6 +96,7 @@ function redo(): void {
 }
 editor.onUndo = undo;
 editor.onRedo = redo;
+editor.onStatus = (m) => flash(m);
 
 // hidden file input for JSON import
 const fileInput = document.createElement('input');
@@ -155,6 +168,17 @@ toolbar = buildToolbar(toolbarEl, editor, {
     flash('已导出 JSON');
   },
   onImport: () => fileInput.click(),
+  onShare: async () => {
+    const data = btoa(unescape(encodeURIComponent(world.serialize())));
+    const url = `${location.origin}${location.pathname}#c=${data}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      flash('🔗 分享链接已复制到剪贴板');
+    } catch {
+      location.hash = `c=${data}`;
+      flash('🔗 已生成链接（在地址栏，可复制）');
+    }
+  },
   templates: () => [...TEMPLATES, ...customTemplates],
   onSaveTemplate: () => {
     const sel = editor.selection();
@@ -191,8 +215,8 @@ toolbar = buildToolbar(toolbarEl, editor, {
 
 const HINT =
   '工具(左手)：<b>Q</b>线 <b>W</b>AND <b>E</b>OR <b>A</b>XOR <b>S</b>NOT <b>Z</b>按钮 <b>X</b>灯 ' +
-  '<b>C</b>时钟 <b>G</b>触发器 <b>V</b>桥 <b>D</b>删除 <b>B</b>框选 <b>F</b>操作 · <b>R</b>旋转 · ' +
-  '<b>Ctrl+Z/Y</b>撤销/重做 · 框选(B)后点「框选存模板」可存为模板 · 滚轮缩放';
+  '<b>C</b>时钟 <b>G</b>触发器 <b>V</b>桥 <b>T</b>总线 <b>D</b>删除 <b>B</b>框选 <b>F</b>操作 · <b>R</b>旋转 · ' +
+  '<b>Ctrl+Z/Y</b>撤销/重做 · 框选后 <b>R</b>整体旋转、<b>Ctrl+C/X/V</b>复制/剪切/粘贴 · <b>F</b>操作模式悬停看值/点亮整网 · 「🔗分享」';
 hintEl.innerHTML = HINT;
 
 // --- main loop ---
@@ -204,7 +228,7 @@ function frame(): void {
     history.record(world.serialize());
   }
   for (let i = 0; i < ticksPerFrame; i++) kernel.tick();
-  renderer.draw(world, kernel, editor.preview(), editor.selection());
+  renderer.draw(world, kernel, editor.preview(), editor.selection(), editor.probe());
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
