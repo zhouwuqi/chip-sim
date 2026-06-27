@@ -473,6 +473,12 @@ export class Editor {
         case 'y':
           this.setTool('DISPLAY');
           break;
+        case 'j':
+          this.setTool('REGISTER');
+          break;
+        case 't':
+          this.setTool('TRISTATE');
+          break;
         case 'e':
           this.setTool('DELETE');
           break;

@@ -115,6 +115,8 @@ export function compile(components: Iterable<Component>): Compiled {
   const merges: Compiled['merges'] = [];
   const splits: Compiled['splits'] = [];
   const displays: Compiled['displays'] = [];
+  const registers: Compiled['registers'] = [];
+  const tristates: Compiled['tristates'] = [];
 
   for (const c of list) {
     switch (c.kind) {
@@ -171,6 +173,23 @@ export function compile(components: Iterable<Component>): Compiled {
       case 'DISPLAY':
         displays.push({ net: idOf(`${c.id}:din`), width: BUS_WIDTH, compId: c.id });
         break;
+      case 'REGISTER':
+        registers.push({
+          busIn: idOf(`${c.id}:rin`),
+          load: idOf(`${c.id}:load`),
+          clk: idOf(`${c.id}:clk`),
+          out: idOf(`${c.id}:rout`),
+          compId: c.id,
+        });
+        break;
+      case 'TRISTATE':
+        tristates.push({
+          in: idOf(`${c.id}:tin`),
+          en: idOf(`${c.id}:ten`),
+          out: idOf(`${c.id}:tout`),
+          compId: c.id,
+        });
+        break;
       // WIRE / BUS / BRIDGE have no behaviour; they only contribute connectivity.
     }
   }
@@ -185,6 +204,8 @@ export function compile(components: Iterable<Component>): Compiled {
     merges,
     splits,
     displays,
+    registers,
+    tristates,
     netOf,
   };
 }

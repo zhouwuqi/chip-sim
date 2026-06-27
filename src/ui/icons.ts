@@ -128,6 +128,20 @@ export function drawToolIcon(ctx: CanvasRenderingContext2D, tool: Tool, S: numbe
       box();
       sym('8');
       break;
+    case 'REGISTER':
+      box();
+      sym('R');
+      break;
+    case 'TRISTATE': {
+      // a buffer triangle pointing right (the classic tri-state driver glyph)
+      ctx.beginPath();
+      ctx.moveTo(S * 0.3, S * 0.24);
+      ctx.lineTo(S * 0.3, S * 0.76);
+      ctx.lineTo(S * 0.74, S * 0.5);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
     case 'AND':
     case 'OR':
     case 'XOR':

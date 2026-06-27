@@ -1,5 +1,8 @@
 import type { Compiled } from './types';
-import { Op } from './types';
+import { Op, BUS_WIDTH } from './types';
+
+/** Bit mask for a full bus word (all BUS_WIDTH bits set). */
+const BUS_MASK = (1 << BUS_WIDTH) - 1;
 
 /**
  * Synchronous delta-step simulator (the Turing-Complete model).
@@ -22,6 +25,9 @@ export class Kernel {
   private clkOut: Uint8Array;
   private dffPrevClk: Uint8Array;
   private dffQ: Uint8Array;
+  // register state: stored word + previous clock level for edge detection
+  private regVal: Int32Array;
+  private regPrevClk: Uint8Array;
 
   constructor(compiled: Compiled, buttonState: (compId: number) => boolean) {
     this.compiled = compiled;
@@ -32,10 +38,12 @@ export class Kernel {
     this.clkOut = new Uint8Array(compiled.clocks.length);
     this.dffPrevClk = new Uint8Array(compiled.dffs.length);
     this.dffQ = new Uint8Array(compiled.dffs.length);
+    this.regVal = new Int32Array(compiled.registers.length);
+    this.regPrevClk = new Uint8Array(compiled.registers.length);
   }
 
   tick(): void {
-    const { gates, sources, clocks, dffs, merges, splits } = this.compiled;
+    const { gates, sources, clocks, dffs, merges, splits, registers, tristates } = this.compiled;
     const cur = this.cur;
     const next = this.next;
     next.fill(0);
@@ -97,6 +105,22 @@ export class Kernel {
       const sp = splits[i];
       const v = cur[sp.in];
       for (let b = 0; b < sp.bits.length; b++) next[sp.bits[b]] = (v >> b) & 1;
+    }
+
+    // REGISTER: latch busIn on the rising edge of clk when load is high, else
+    // hold; always drive the stored word onto its out net.
+    for (let i = 0; i < registers.length; i++) {
+      const r = registers[i];
+      const clk = cur[r.clk];
+      if (clk && !this.regPrevClk[i] && cur[r.load]) this.regVal[i] = cur[r.busIn] & BUS_MASK;
+      this.regPrevClk[i] = clk ? 1 : 0;
+      next[r.out] |= this.regVal[i];
+    }
+
+    // TRISTATE: drive the bus only while enabled (drivers OR onto the net).
+    for (let i = 0; i < tristates.length; i++) {
+      const t = tristates[i];
+      if (cur[t.en]) next[t.out] |= cur[t.in] & BUS_MASK;
     }
 
     this.cur = next;

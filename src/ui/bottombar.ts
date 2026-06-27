@@ -32,6 +32,9 @@ const ROWS: Row[] = [
   { tool: 'SPLIT', name: LABEL.SPLIT, key: 'S' },
   { tool: 'DISPLAY', name: LABEL.DISPLAY, key: 'Y' },
   'sep',
+  { tool: 'REGISTER', name: LABEL.REGISTER, key: 'J' },
+  { tool: 'TRISTATE', name: LABEL.TRISTATE, key: 'T' },
+  'sep',
   { tool: 'DELETE', name: '删除', key: 'E' },
 ];
 

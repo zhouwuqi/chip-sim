@@ -21,7 +21,9 @@ export type ComponentKind =
   | 'BUS'
   | 'MERGE'
   | 'SPLIT'
-  | 'DISPLAY';
+  | 'DISPLAY'
+  | 'REGISTER'
+  | 'TRISTATE';
 
 export const GATE_KINDS: ComponentKind[] = ['AND', 'OR', 'XOR', 'NOT'];
 
@@ -107,6 +109,32 @@ export interface CompiledDisplay {
   compId: number;
 }
 
+/**
+ * REGISTER: an N-bit edge-triggered register with a load enable.
+ * On the rising edge of `clk`, latches the `busIn` value iff `load` is high;
+ * otherwise holds. Its stored value is always driven onto `out` (a bus net) —
+ * gate it onto a shared bus through a TRISTATE.
+ */
+export interface CompiledRegister {
+  busIn: number;
+  load: number;
+  clk: number;
+  out: number;
+  compId: number;
+}
+
+/**
+ * TRISTATE: a bus driver. When `en` is high it drives `in` onto `out`;
+ * otherwise it contributes nothing (high-Z). Multiple tristates can share one
+ * bus net — drivers OR together, so exactly one should be enabled at a time.
+ */
+export interface CompiledTristate {
+  in: number;
+  en: number;
+  out: number;
+  compId: number;
+}
+
 export interface Compiled {
   numNets: number;
   gates: CompiledGate[];
@@ -117,6 +145,8 @@ export interface Compiled {
   merges: CompiledMerge[];
   splits: CompiledSplit[];
   displays: CompiledDisplay[];
+  registers: CompiledRegister[];
+  tristates: CompiledTristate[];
   /** terminal-key -> net index, used by the renderer to colour pins/wires. */
   netOf: Record<string, number>;
 }

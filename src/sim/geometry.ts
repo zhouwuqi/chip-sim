@@ -90,6 +90,21 @@ function localPorts(kind: ComponentKind): LocalPort[] {
         { dx: 0, dy: 0, edge: 1, role: 'in', tag: 'clk', inputIndex: 1 }, // CLK: bottom
         { dx: 0, dy: 0, edge: 0, role: 'out', tag: 'q' }, // Q: right
       ];
+    case 'REGISTER':
+      // 4-bit register: bus in (W), bus out (E), load (N), clk (S).
+      return [
+        { dx: 0, dy: 0, edge: 2, role: 'bus', tag: 'rin' }, // bus in: left
+        { dx: 0, dy: 0, edge: 0, role: 'bus', tag: 'rout' }, // stored value out: right
+        { dx: 0, dy: 0, edge: 3, role: 'in', tag: 'load', inputIndex: 0 }, // load enable: top
+        { dx: 0, dy: 0, edge: 1, role: 'in', tag: 'clk', inputIndex: 1 }, // clock: bottom
+      ];
+    case 'TRISTATE':
+      // bus driver: bus in (W), bus out (E), enable (S).
+      return [
+        { dx: 0, dy: 0, edge: 2, role: 'bus', tag: 'tin' }, // bus in: left
+        { dx: 0, dy: 0, edge: 0, role: 'bus', tag: 'tout' }, // bus out: right
+        { dx: 0, dy: 0, edge: 1, role: 'in', tag: 'ten', inputIndex: 0 }, // enable: bottom
+      ];
     case 'AND':
     case 'OR':
     case 'XOR':
@@ -184,6 +199,8 @@ export const GATE_SYMBOL: Record<ComponentKind, string> = {
   MERGE: 'M',
   SPLIT: 'S',
   DISPLAY: '',
+  REGISTER: 'R',
+  TRISTATE: '▷',
 };
 
 export const LABEL: Record<ComponentKind, string> = {
@@ -201,4 +218,6 @@ export const LABEL: Record<ComponentKind, string> = {
   MERGE: '合并',
   SPLIT: '拆分',
   DISPLAY: '显示',
+  REGISTER: '寄存器',
+  TRISTATE: '三态',
 };
